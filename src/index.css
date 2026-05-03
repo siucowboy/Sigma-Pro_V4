@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  /* Default is essentially dark mode as hardcoded in components */
+  
+  /* Theme overrides for Light Mode */
+  .light {
+    color-scheme: light;
+  }
+
+  .light, .light * {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+  }
+
+  /* Background Overrides */
+  .light .bg-slate-950 { background-color: #f8fafc !important; } /* slate-50 */
+  .light .bg-slate-900 { background-color: #ffffff !important; } /* white */
+  .light .bg-slate-800 { background-color: #f1f5f9 !important; } /* slate-100 */
+  .light .bg-slate-700 { background-color: #e2e8f0 !important; } /* slate-200 */
+  .light .bg-slate-900\/50 { background-color: rgba(248, 250, 252, 0.5) !important; }
+  .light .bg-slate-800\/50 { background-color: rgba(241, 245, 249, 0.5) !important; }
+  .light .bg-slate-800\/40 { background-color: rgba(241, 245, 249, 0.4) !important; }
+  .light .bg-slate-800\/30 { background-color: rgba(241, 245, 249, 0.3) !important; }
+  .light .bg-slate-950\/50 { background-color: rgba(248, 250, 252, 0.5) !important; }
+  .light .bg-slate-900\/80 { background-color: rgba(255, 255, 255, 0.8) !important; }
+  .light .bg-slate-900\/40 { background-color: rgba(255, 255, 255, 0.4) !important; }
+
+  /* Text Overrides */
+  .light .text-slate-100 { color: #020617 !important; } /* slate-950 */
+  .light .text-slate-200 { color: #0f172a !important; } /* slate-900 */
+  .light .text-slate-300 { color: #1e293b !important; } /* slate-800 */
+  .light .text-slate-400 { color: #475569 !important; } /* slate-600 */
+  .light .text-slate-500 { color: #64748b !important; } /* slate-500 */
+  .light .text-white { color: #0f172a !important; }
+  .light .text-slate-600 { color: #334155 !important; }
+
+  /* Border Overrides */
+  .light .border-slate-800 { border-color: #e2e8f0 !important; } /* slate-200 */
+  .light .border-slate-700 { border-color: #cbd5e1 !important; } /* slate-300 */
+  .light .border-slate-600 { border-color: #94a3b8 !important; } /* slate-400 */
+  .light .border-slate-700\/50 { border-color: rgba(203, 213, 225, 0.5) !important; }
+  .light .border-slate-800\/50 { border-color: rgba(226, 232, 240, 0.5) !important; }
+
+  /* Interactive / Accent adjustments for Light Mode */
+  .light .hover\:bg-slate-800\/50:hover { background-color: #f1f5f9 !important; }
+  .light .hover\:bg-slate-800\/40:hover { background-color: #f1f5f9 !important; }
+  .light .hover\:bg-slate-700:hover { background-color: #f1f5f9 !important; }
+  .light .hover\:border-slate-500:hover { border-color: #64748b !important; }
+  .light .hover\:text-white:hover { color: #0f172a !important; }
+  .light .placeholder\:text-slate-600::placeholder { color: #94a3b8 !important; }
+
+  /* Shadow adjustments */
+  .light .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1) !important; }
+  .light .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05) !important; }
+  
+  /* Input focus improvements for light mode */
+  .light input:focus, .light select:focus, .light textarea:focus {
+    background-color: #ffffff !important;
+    border-color: #0ea5e9 !important; /* sky-500 */
+  }
+
+  /* Specific accents like sky-400 usually look okay, but might need a bit more contrast in light */
+  .light .text-sky-400 { color: #0284c7 !important; } /* sky-600 */
+  .light .text-cyan-400 { color: #0891b2 !important; } /* cyan-600 */
+  .light .text-amber-400 { color: #d97706 !important; } /* amber-600 */
+}
