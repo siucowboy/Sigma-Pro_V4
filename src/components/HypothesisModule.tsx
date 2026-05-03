@@ -64,7 +64,7 @@ const formatPropValue = (val: any, decimals: number = 4) => {
   return val.toFixed(decimals);
 };
 
-const DiagnosticIndicator = ({ label, passed, pValue }: { label: string, passed: boolean, pValue: number }) => (
+const DiagnosticIndicator: React.FC<{ label: string, passed: boolean, pValue: number }> = ({ label, passed, pValue }) => (
   <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded border border-slate-700">
     <div>
       <div className="text-xs text-slate-500 uppercase font-bold tracking-wider">{label}</div>
