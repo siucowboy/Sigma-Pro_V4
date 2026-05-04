@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Calculator, Sigma, Users, Layers3, Percent, ArrowRight, TrendingUp } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Calculator, Sigma, Users, Layers3, Percent, ArrowRight, TrendingUp, Hash } from 'lucide-react';
 import {
   CartesianGrid,
   Line,
@@ -14,7 +14,7 @@ import * as jStatModule from 'jstat';
 
 const jStat: any = (jStatModule as any).default?.jStat || (jStatModule as any).jStat || (jStatModule as any).default || jStatModule;
 
-type TabId = 'one-sample' | 'two-sample' | 'three-plus' | 'proportions';
+type TabId = 'one-sample' | 'two-sample' | 'three-plus' | 'proportions' | 'poisson';
 type Alternative = 'two-sided' | 'greater' | 'less';
 type Direction = 'increase' | 'decrease';
 type SolveMode = 'sample-size' | 'power' | 'effect';
@@ -35,11 +35,93 @@ type CurvePoint = {
   power: number;
 };
 
+type PowerSettings = {
+  activeTab: TabId;
+  alphaInput: string;
+  powerInput: string;
+  alternative: Alternative;
+  oneDeltaInput: string;
+  oneSigmaInput: string;
+  oneNInput: string;
+  oneNonparametric: boolean;
+  twoDeltaInput: string;
+  twoSigmaInput: string;
+  twoControlNInput: string;
+  twoNonparametric: boolean;
+  groupsInput: string;
+  anovaEffectInput: string;
+  anovaTotalNInput: string;
+  anovaNonparametric: boolean;
+  propMode: 'one' | 'two';
+  propDirection: Direction;
+  p0Input: string;
+  p1Input: string;
+  p2Input: string;
+  propNInput: string;
+  poissonMode: 'one' | 'two';
+  poissonDirection: Direction;
+  poissonUnitLabel: string;
+  poissonBaselineRateInput: string;
+  poissonExpectedRateInput: string;
+  poissonExposureInput: string;
+  poissonControlRateInput: string;
+  poissonTreatmentRateInput: string;
+  poissonFixedControlExposureInput: string;
+  poissonTreatmentExposureInput: string;
+};
+
+const POWER_SETTINGS_KEY = 'sigmaStats_power_sample_size_settings';
+const defaultPowerSettings: PowerSettings = {
+  activeTab: 'one-sample',
+  alphaInput: '0.05',
+  powerInput: '0.90',
+  alternative: 'two-sided',
+  oneDeltaInput: '1',
+  oneSigmaInput: '2',
+  oneNInput: '',
+  oneNonparametric: false,
+  twoDeltaInput: '1',
+  twoSigmaInput: '2',
+  twoControlNInput: '',
+  twoNonparametric: false,
+  groupsInput: '3',
+  anovaEffectInput: '0.25',
+  anovaTotalNInput: '',
+  anovaNonparametric: false,
+  propMode: 'one',
+  propDirection: 'increase',
+  p0Input: '0.10',
+  p1Input: '0.15',
+  p2Input: '0.20',
+  propNInput: '',
+  poissonMode: 'one',
+  poissonDirection: 'increase',
+  poissonUnitLabel: 'unit',
+  poissonBaselineRateInput: '0.10',
+  poissonExpectedRateInput: '0.15',
+  poissonExposureInput: '',
+  poissonControlRateInput: '0.10',
+  poissonTreatmentRateInput: '0.15',
+  poissonFixedControlExposureInput: '',
+  poissonTreatmentExposureInput: ''
+};
+
+function loadPowerSettings(): PowerSettings {
+  if (typeof window === 'undefined') return defaultPowerSettings;
+  try {
+    const saved = window.localStorage.getItem(POWER_SETTINGS_KEY);
+    return saved ? { ...defaultPowerSettings, ...JSON.parse(saved) } : defaultPowerSettings;
+  } catch {
+    return defaultPowerSettings;
+  }
+}
+
 const tabs: { id: TabId, label: string, icon: React.ElementType }[] = [
   { id: 'one-sample', label: 'One Sample', icon: Sigma },
   { id: 'two-sample', label: 'Two Sample', icon: Users },
   { id: 'three-plus', label: '3 or More', icon: Layers3 },
   { id: 'proportions', label: 'Proportions (1 and 2 sample)', icon: Percent },
+  { id: 'poisson', label: 'Poisson Rates', icon: Hash },
 ];
 
 const zForAlpha = (alpha: number, alternative: Alternative) => {
@@ -58,9 +140,12 @@ const parseOptional = (value: string) => {
 };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const positive = (value: number | null) => value !== null && Number.isFinite(value) && value > 0;
+const nonnegative = (value: number | null) => value !== null && Number.isFinite(value) && value >= 0;
 const validPower = (value: number | null) => value !== null && value > 0 && value < 1;
 const validProportion = (value: number | null) => value !== null && value > 0 && value < 1;
 const changeValue = (setter: (value: string) => void) => (value: string) => setter(value);
+const nonparametricN = (value: number | null) => value === null ? null : Math.ceil(value * 1.15);
+const nonparametricNote = ' Non-normal/nonparametric planning adjustment adds 15% and rounds up; actual needs depend greatly on actual distribution shapes and analysis needs.';
 
 function NumberField({ label, value, setValue, step = 0.01, min = 0, placeholder }: {
   label: string;
@@ -82,6 +167,47 @@ function NumberField({ label, value, setValue, step = 0.01, min = 0, placeholder
         onChange={e => setValue(e.target.value)}
         className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-100 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 placeholder:text-slate-600"
       />
+    </label>
+  );
+}
+
+function TextField({ label, value, setValue, placeholder }: {
+  label: string;
+  value: string;
+  setValue: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">{label}</span>
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={e => setValue(e.target.value)}
+        className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-100 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 placeholder:text-slate-600"
+      />
+    </label>
+  );
+}
+
+function NonparametricToggle({ checked, setChecked }: { checked: boolean; setChecked: (value: boolean) => void }) {
+  return (
+    <label className="block rounded border border-slate-700 bg-slate-950/70 p-3 cursor-pointer">
+      <span className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={e => setChecked(e.target.checked)}
+          className="mt-1"
+        />
+        <span>
+          <span className="block text-xs uppercase tracking-wider text-slate-400 font-bold">Non-normal / nonparametric planning</span>
+          <span className="block text-xs leading-5 text-slate-500 mt-1">
+            Adds 15% to calculated sample-size recommendations and rounds up. Planning only; actual needs depend greatly on the actual distribution shape and analysis needs.
+          </span>
+        </span>
+      </span>
     </label>
   );
 }
@@ -184,10 +310,8 @@ function oneSampleMeanPower(n: number, alpha: number, alternative: Alternative, 
   return tTestPower(n - 1, Math.abs(delta) * Math.sqrt(n) / sigma, alpha, alternative);
 }
 
-function twoSampleMeanPower(controlN: number, alpha: number, alternative: Alternative, delta: number, sigma: number, allocation: number) {
-  const ratio = Math.max(allocation, 0.01);
-  const treatmentN = Math.max(2, Math.ceil(controlN * ratio));
-  if (controlN < 2 || sigma <= 0) return null;
+function twoSampleMeanPower(controlN: number, treatmentN: number, alpha: number, alternative: Alternative, delta: number, sigma: number) {
+  if (controlN < 2 || treatmentN < 2 || sigma <= 0) return null;
   const df = controlN + treatmentN - 2;
   const seUnits = Math.sqrt(1 / controlN + 1 / treatmentN);
   return tTestPower(df, Math.abs(delta) / (sigma * seUnits), alpha, alternative);
@@ -231,7 +355,7 @@ function findDetectableEffect(targetPower: number, powerAtEffect: (effect: numbe
   return high;
 }
 
-function solveOneSample(alpha: number, alternative: Alternative, power: number | null, delta: number | null, sigma: number | null, nInput: number | null): Result {
+function solveOneSample(alpha: number, alternative: Alternative, power: number | null, delta: number | null, sigma: number | null, nInput: number | null, nonparametric = false): Result {
   if (!positive(sigma)) {
     return invalidResult('Enter a positive standard deviation.');
   }
@@ -267,71 +391,55 @@ function solveOneSample(alpha: number, alternative: Alternative, power: number |
 
   if (!validPower(power) || !positive(delta)) return invalidResult('Enter Power between 0 and 1 and a positive difference.');
   const n = findSmallestN(power, nValue => oneSampleMeanPower(nValue, alpha, alternative, delta, sigma));
+  const adjustedN = nonparametric ? nonparametricN(n) : n;
   return {
     mode: 'sample-size',
-    primary: n?.toString() || '--',
+    primary: adjustedN?.toString() || '--',
     secondary: 'observations',
-    note: 'Uses a noncentral t approximation for a one-sample mean test. Treat this as planning guidance before final confirmation.',
+    details: nonparametric && n ? `Base parametric estimate: ${n} observations` : undefined,
+    note: `Uses a noncentral t approximation for a one-sample mean test. Treat this as planning guidance before final confirmation.${nonparametric ? nonparametricNote : ''}`,
     achievedPower: power,
-    targetN: n,
+    targetN: adjustedN,
     effect: Math.abs(delta),
   };
 }
 
-function solveTwoSample(alpha: number, alternative: Alternative, power: number | null, delta: number | null, sigma: number | null, allocation: number | null, controlN: number | null): Result {
-  const ratio = Math.max(allocation || 1, 0.01);
+function solveTwoSample(alpha: number, alternative: Alternative, power: number | null, delta: number | null, sigma: number | null, controlN: number | null, nonparametric = false): Result {
   if (!positive(sigma)) return invalidResult('Enter a positive pooled standard deviation.');
+  const fixedControl = positive(controlN) ? Math.ceil(controlN) : null;
 
   if (power === null) {
-    if (!positive(delta) || !positive(controlN)) return invalidResult('Leave Power blank, then enter control sample size and difference to calculate achieved power.');
-    const control = Math.ceil(controlN);
-    const treatment = Math.ceil(control * ratio);
-    const achievedPower = twoSampleMeanPower(control, alpha, alternative, delta, sigma, ratio);
-    return {
-      mode: 'power',
-      primary: fmt(achievedPower, 3),
-      secondary: 'power',
-      details: `Control: ${control} | Treatment: ${treatment}`,
-      note: 'Calculated from the entered group sizes, alpha, pooled sigma, and difference using a noncentral t approximation.',
-      achievedPower,
-      targetN: control + treatment,
-      effect: Math.abs(delta),
-    };
+    return invalidResult('Enter target power to solve the needed treatment sample size. This mode no longer uses a treatment/control allocation ratio.');
   }
 
   if (delta === null) {
-    if (!validPower(power) || !positive(controlN)) return invalidResult('Leave Difference blank, then enter target power and control sample size to calculate detectable difference.');
-    const control = Math.ceil(controlN);
-    const treatment = Math.ceil(control * ratio);
-    const detectable = findDetectableEffect(power, effect => twoSampleMeanPower(control, alpha, alternative, effect, sigma, ratio));
-    return {
-      mode: 'effect',
-      primary: fmt(detectable, 3),
-      secondary: 'difference',
-      details: `Control: ${control} | Treatment: ${treatment}`,
-      note: 'This is the minimum absolute difference detectable at the requested power and allocation.',
-      achievedPower: power,
-      targetN: control + treatment,
-      effect: detectable,
-    };
+    return invalidResult('Enter the difference to detect. Treatment sample size is solved from the target power and optional control limit.');
   }
 
   if (!validPower(power) || !positive(delta)) return invalidResult('Enter Power between 0 and 1 and a positive difference.');
-  const control = findSmallestN(power, nValue => twoSampleMeanPower(nValue, alpha, alternative, delta, sigma, ratio));
-  const treatment = control ? Math.ceil(control * ratio) : null;
+  const baseControl = fixedControl ?? findSmallestN(power, nValue => twoSampleMeanPower(nValue, nValue, alpha, alternative, delta, sigma));
+  const baseTreatment = fixedControl
+    ? findSmallestN(power, nValue => twoSampleMeanPower(fixedControl, nValue, alpha, alternative, delta, sigma))
+    : baseControl;
+  const control = fixedControl ? baseControl : (nonparametric ? nonparametricN(baseControl) : baseControl);
+  const treatment = nonparametric ? nonparametricN(baseTreatment) : baseTreatment;
+  const targetN = control && treatment ? control + treatment : null;
+
   return {
     mode: 'sample-size',
-    primary: control?.toString() || '--',
-    secondary: ratio === 1 ? 'per group' : 'control observations',
-    details: `Control: ${control || '--'} | Treatment: ${treatment || '--'} | Total: ${control && treatment ? control + treatment : '--'}`,
-    note: 'Uses an equal-variance noncentral t approximation for two independent samples.',
+    primary: fixedControl ? (treatment?.toString() || '--') : (control?.toString() || '--'),
+    secondary: fixedControl ? 'treatment observations' : 'per group',
+    details: `Control: ${control || '--'} | Treatment: ${treatment || '--'} | Total: ${targetN || '--'}${nonparametric && baseControl && baseTreatment ? ` | Base estimate: Control ${baseControl}, Treatment ${baseTreatment}` : ''}`,
+    note: fixedControl
+      ? `Holds the entered control sample size fixed and solves the needed treatment sample size using an equal-variance noncentral t approximation.${nonparametric ? nonparametricNote : ''}`
+      : `Solves balanced control and treatment sample sizes using an equal-variance noncentral t approximation.${nonparametric ? nonparametricNote : ''}`,
     achievedPower: power,
-    targetN: control && treatment ? control + treatment : null,
+    targetN,
     effect: Math.abs(delta),
   };
 }
 
-function solveAnova(alpha: number, alternative: Alternative, power: number | null, effect: number | null, groups: number | null, totalN: number | null): Result {
+function solveAnova(alpha: number, alternative: Alternative, power: number | null, effect: number | null, groups: number | null, totalN: number | null, nonparametric = false): Result {
   const zAlpha = zForAlpha(alpha, alternative);
   const groupCount = Math.max(Math.round(groups || 0), 2);
   const df = groupCount - 1;
@@ -368,15 +476,16 @@ function solveAnova(alpha: number, alternative: Alternative, power: number | nul
 
   if (!validPower(power) || !positive(effect)) return invalidResult('Enter Power between 0 and 1 and a positive Cohen\'s f.');
   const total = ceilFinite(Math.pow(zAlpha + zForPower(power), 2) * df / Math.pow(effect, 2));
-  const perGroup = total ? Math.ceil(total / groupCount) : null;
+  const adjustedTotal = nonparametric ? nonparametricN(total) : total;
+  const perGroup = adjustedTotal ? Math.ceil(adjustedTotal / groupCount) : null;
   return {
     mode: 'sample-size',
-    primary: total?.toString() || '--',
+    primary: adjustedTotal?.toString() || '--',
     secondary: 'total observations',
-    details: `About ${perGroup || '--'} observations per group`,
-    note: 'This is an ANOVA planning approximation using Cohen\'s f.',
+    details: `About ${perGroup || '--'} observations per group${nonparametric && total ? ` | Base parametric estimate: ${total} total observations` : ''}`,
+    note: `This is an ANOVA planning approximation using Cohen's f.${nonparametric ? nonparametricNote : ''}`,
     achievedPower: power,
-    targetN: total,
+    targetN: adjustedTotal,
     effect,
   };
 }
@@ -522,6 +631,235 @@ function solveProportionBySearch(p1: number, nPerGroup: number, targetPower: num
   return direction === 'increase' ? high : low;
 }
 
+// Poisson rate planning formulas:
+// These use normal approximations to Poisson rate tests. Sample size is treated as exposure units
+// such as units inspected, hours observed, transactions reviewed, or months of monitoring.
+function onePoissonRatePower(exposure: number, alpha: number, alternative: Alternative, baselineRate: number, expectedRate: number) {
+  if (exposure <= 0 || baselineRate < 0 || expectedRate < 0 || (baselineRate === 0 && expectedRate === 0)) return null;
+  const zAlpha = zForAlpha(alpha, alternative);
+  const nullSe = Math.sqrt(Math.max(baselineRate, 1e-9) / exposure);
+  const altSe = Math.sqrt(Math.max(expectedRate, 1e-9) / exposure);
+
+  if (alternative === 'greater') {
+    const upperCutoff = baselineRate + zAlpha * nullSe;
+    return clamp(1 - jStat.normal.cdf(upperCutoff, expectedRate, altSe), 0, 0.999);
+  }
+
+  if (alternative === 'less') {
+    const lowerCutoff = baselineRate - zAlpha * nullSe;
+    return clamp(jStat.normal.cdf(lowerCutoff, expectedRate, altSe), 0, 0.999);
+  }
+
+  const lowerCutoff = baselineRate - zAlpha * nullSe;
+  const upperCutoff = baselineRate + zAlpha * nullSe;
+  return clamp(
+    jStat.normal.cdf(lowerCutoff, expectedRate, altSe) + (1 - jStat.normal.cdf(upperCutoff, expectedRate, altSe)),
+    0,
+    0.999
+  );
+}
+
+function twoPoissonRatePower(controlExposure: number, treatmentExposure: number, alpha: number, alternative: Alternative, controlRate: number, treatmentRate: number) {
+  if (controlExposure <= 0 || treatmentExposure <= 0 || controlRate < 0 || treatmentRate < 0 || (controlRate === 0 && treatmentRate === 0)) return null;
+  const zAlpha = zForAlpha(alpha, alternative);
+  const diff = treatmentRate - controlRate;
+  const nullSe = Math.sqrt(Math.max(controlRate, 1e-9) / controlExposure + Math.max(controlRate, 1e-9) / treatmentExposure);
+  const altSe = Math.sqrt(Math.max(controlRate, 1e-9) / controlExposure + Math.max(treatmentRate, 1e-9) / treatmentExposure);
+
+  if (alternative === 'greater') {
+    return clamp(1 - jStat.normal.cdf(zAlpha * nullSe, diff, altSe), 0, 0.999);
+  }
+
+  if (alternative === 'less') {
+    return clamp(jStat.normal.cdf(-zAlpha * nullSe, diff, altSe), 0, 0.999);
+  }
+
+  return clamp(
+    jStat.normal.cdf(-zAlpha * nullSe, diff, altSe) + (1 - jStat.normal.cdf(zAlpha * nullSe, diff, altSe)),
+    0,
+    0.999
+  );
+}
+
+function solveOnePoissonRate(alpha: number, alternative: Alternative, power: number | null, baselineRate: number | null, expectedRate: number | null, exposureInput: number | null, direction: Direction, unitLabel: string): Result {
+  if (!nonnegative(baselineRate)) return invalidResult('Enter a baseline rate greater than or equal to 0.');
+  if (expectedRate !== null && !nonnegative(expectedRate)) return invalidResult('Enter an expected rate greater than or equal to 0.');
+  if (expectedRate !== null && baselineRate === 0 && expectedRate === 0) return invalidResult('Baseline and expected rates cannot both be 0.');
+  const units = unitLabel.trim() || 'exposure unit';
+
+  if (power === null) {
+    if (!nonnegative(expectedRate) || !positive(exposureInput)) return invalidResult('Leave Power blank, then enter exposure and expected rate to calculate achieved power.');
+    const exposure = Math.ceil(exposureInput);
+    const achievedPower = onePoissonRatePower(exposure, alpha, alternative, baselineRate, expectedRate);
+    const diff = expectedRate - baselineRate;
+    const ratio = baselineRate > 0 ? expectedRate / baselineRate : null;
+    return {
+      mode: 'power',
+      primary: fmt(achievedPower, 3),
+      secondary: 'power',
+      details: `Exposure: ${exposure} ${units} | Baseline: ${fmt(baselineRate)} | Expected: ${fmt(expectedRate)} | Difference: ${fmt(diff)} | Ratio: ${ratio === null ? '--' : fmt(ratio)} | Alpha: ${fmt(alpha, 3)}`,
+      note: `With ${exposure} ${units}, the calculator estimates ${fmt(achievedPower, 3)} power to detect a rate change from ${fmt(baselineRate)} to ${fmt(expectedRate)}.`,
+      achievedPower,
+      targetN: exposure,
+      effect: Math.abs(diff),
+    };
+  }
+
+  if (expectedRate === null) {
+    if (!validPower(power) || !positive(exposureInput)) return invalidResult('Leave Expected Rate blank, then enter target power and exposure to calculate a detectable rate.');
+    const exposure = Math.ceil(exposureInput);
+    const detected = solveOnePoissonRateBySearch(baselineRate, exposure, power, alpha, alternative, direction);
+    const diff = detected !== null ? detected - baselineRate : null;
+    const ratio = detected !== null && baselineRate > 0 ? detected / baselineRate : null;
+    return {
+      mode: 'effect',
+      primary: fmt(detected, 3),
+      secondary: `events per ${units}`,
+      details: `Exposure: ${exposure} ${units} | Baseline: ${fmt(baselineRate)} | Difference: ${fmt(diff)} | Ratio: ${ratio === null ? '--' : fmt(ratio)} | Alpha: ${fmt(alpha, 3)} | Target power: ${fmt(power, 3)}`,
+      note: `This is the approximate ${direction === 'increase' ? 'higher' : 'lower'} rate detectable with ${exposure} ${units}.`,
+      achievedPower: power,
+      targetN: exposure,
+      effect: diff === null ? null : Math.abs(diff),
+    };
+  }
+
+  if (!validPower(power)) return invalidResult('Enter Power between 0 and 1.');
+  const exposure = findSmallestN(power, n => onePoissonRatePower(n, alpha, alternative, baselineRate, expectedRate), 1);
+  const diff = expectedRate - baselineRate;
+  const ratio = baselineRate > 0 ? expectedRate / baselineRate : null;
+  return {
+    mode: 'sample-size',
+    primary: exposure?.toString() || '--',
+    secondary: units,
+    details: `Baseline: ${fmt(baselineRate)} | Expected: ${fmt(expectedRate)} | Difference: ${fmt(diff)} | Ratio: ${ratio === null ? '--' : fmt(ratio)} | Alpha: ${fmt(alpha, 3)} | Target power: ${fmt(power, 3)}`,
+    note: `Plan for about ${exposure || '--'} ${units} to detect the expected Poisson rate change.`,
+    achievedPower: power,
+    targetN: exposure,
+    effect: Math.abs(diff),
+  };
+}
+
+function solveOnePoissonRateBySearch(baselineRate: number, exposure: number, targetPower: number, alpha: number, alternative: Alternative, direction: Direction) {
+  const lowBoundary = 0;
+  let low = direction === 'increase' ? baselineRate : lowBoundary;
+  let high = direction === 'increase' ? Math.max(baselineRate * 2, baselineRate + 1, 1) : baselineRate;
+
+  if (direction === 'increase') {
+    while ((onePoissonRatePower(exposure, alpha, alternative, baselineRate, high) || 0) < targetPower && high < 100000) high *= 2;
+    if (high >= 100000) return null;
+  } else if ((onePoissonRatePower(exposure, alpha, alternative, baselineRate, lowBoundary) || 0) < targetPower) {
+    return null;
+  }
+
+  for (let i = 0; i < 60; i++) {
+    const mid = (low + high) / 2;
+    const midPower = onePoissonRatePower(exposure, alpha, alternative, baselineRate, mid) || 0;
+    if (direction === 'increase') {
+      if (midPower >= targetPower) high = mid;
+      else low = mid;
+    } else {
+      if (midPower >= targetPower) low = mid;
+      else high = mid;
+    }
+  }
+
+  return direction === 'increase' ? high : low;
+}
+
+function solveTwoPoissonRates(alpha: number, alternative: Alternative, power: number | null, controlRate: number | null, treatmentRate: number | null, fixedControlExposure: number | null, treatmentExposureInput: number | null, direction: Direction, unitLabel: string): Result {
+  if (!nonnegative(controlRate)) return invalidResult('Enter a control rate greater than or equal to 0.');
+  if (treatmentRate !== null && !nonnegative(treatmentRate)) return invalidResult('Enter a treatment rate greater than or equal to 0.');
+  if (treatmentRate !== null && controlRate === 0 && treatmentRate === 0) return invalidResult('Control and treatment rates cannot both be 0.');
+  const units = unitLabel.trim() || 'exposure unit';
+  const fixedControl = positive(fixedControlExposure) ? Math.ceil(fixedControlExposure) : null;
+
+  if (power === null) {
+    if (!nonnegative(treatmentRate) || !positive(treatmentExposureInput)) return invalidResult('Leave Power blank, then enter treatment exposure and treatment rate to calculate achieved power.');
+    const treatmentExposure = Math.ceil(treatmentExposureInput);
+    const controlExposure = fixedControl ?? treatmentExposure;
+    const achievedPower = twoPoissonRatePower(controlExposure, treatmentExposure, alpha, alternative, controlRate, treatmentRate);
+    const diff = treatmentRate - controlRate;
+    const ratio = controlRate > 0 ? treatmentRate / controlRate : null;
+    return {
+      mode: 'power',
+      primary: fmt(achievedPower, 3),
+      secondary: 'power',
+      details: `Control exposure: ${controlExposure} | Treatment exposure: ${treatmentExposure} | Total: ${controlExposure + treatmentExposure} ${units} | Control rate: ${fmt(controlRate)} | Treatment rate: ${fmt(treatmentRate)} | Difference: ${fmt(diff)} | Rate ratio: ${ratio === null ? '--' : fmt(ratio)} | Allocation ratio: ${fmt(treatmentExposure / controlExposure)} | Alpha: ${fmt(alpha, 3)}`,
+      note: `With those exposure amounts, the calculator estimates ${fmt(achievedPower, 3)} power to detect the treatment rate difference.`,
+      achievedPower,
+      targetN: controlExposure + treatmentExposure,
+      effect: Math.abs(diff),
+    };
+  }
+
+  if (treatmentRate === null) {
+    if (!validPower(power) || !positive(treatmentExposureInput)) return invalidResult('Leave Treatment Rate blank, then enter target power and treatment exposure to calculate a detectable treatment rate.');
+    const treatmentExposure = Math.ceil(treatmentExposureInput);
+    const controlExposure = fixedControl ?? treatmentExposure;
+    const detected = solveTwoPoissonRateBySearch(controlRate, controlExposure, treatmentExposure, power, alpha, alternative, direction);
+    const diff = detected !== null ? detected - controlRate : null;
+    const ratio = detected !== null && controlRate > 0 ? detected / controlRate : null;
+    return {
+      mode: 'effect',
+      primary: fmt(detected, 3),
+      secondary: `events per ${units}`,
+      details: `Control exposure: ${controlExposure} | Treatment exposure: ${treatmentExposure} | Total: ${controlExposure + treatmentExposure} ${units} | Control rate: ${fmt(controlRate)} | Difference: ${fmt(diff)} | Rate ratio: ${ratio === null ? '--' : fmt(ratio)} | Allocation ratio: ${fmt(treatmentExposure / controlExposure)} | Alpha: ${fmt(alpha, 3)} | Target power: ${fmt(power, 3)}`,
+      note: `This is the approximate ${direction === 'increase' ? 'higher' : 'lower'} treatment rate detectable with the entered exposure.`,
+      achievedPower: power,
+      targetN: controlExposure + treatmentExposure,
+      effect: diff === null ? null : Math.abs(diff),
+    };
+  }
+
+  if (!validPower(power)) return invalidResult('Enter Power between 0 and 1.');
+  const controlExposure = fixedControl ?? findSmallestN(power, n => twoPoissonRatePower(n, n, alpha, alternative, controlRate, treatmentRate), 1);
+  const treatmentExposure = fixedControl
+    ? findSmallestN(power, n => twoPoissonRatePower(fixedControl, n, alpha, alternative, controlRate, treatmentRate), 1)
+    : controlExposure;
+  const total = controlExposure && treatmentExposure ? controlExposure + treatmentExposure : null;
+  const diff = treatmentRate - controlRate;
+  const ratio = controlRate > 0 ? treatmentRate / controlRate : null;
+  return {
+    mode: 'sample-size',
+    primary: fixedControl ? (treatmentExposure?.toString() || '--') : (controlExposure?.toString() || '--'),
+    secondary: fixedControl ? `treatment ${units}` : `${units} per group`,
+    details: `Control exposure: ${controlExposure || '--'} | Treatment exposure: ${treatmentExposure || '--'} | Total: ${total || '--'} ${units} | Control rate: ${fmt(controlRate)} | Treatment rate: ${fmt(treatmentRate)} | Difference: ${fmt(diff)} | Rate ratio: ${ratio === null ? '--' : fmt(ratio)} | Allocation ratio: ${controlExposure && treatmentExposure ? fmt(treatmentExposure / controlExposure) : '--'} | Alpha: ${fmt(alpha, 3)} | Target power: ${fmt(power, 3)}`,
+    note: fixedControl
+      ? 'Holds the entered control exposure fixed and solves the treatment exposure needed for the target power.'
+      : 'Solves balanced control and treatment exposure needed for the target power.',
+    achievedPower: power,
+    targetN: total,
+    effect: Math.abs(diff),
+  };
+}
+
+function solveTwoPoissonRateBySearch(controlRate: number, controlExposure: number, treatmentExposure: number, targetPower: number, alpha: number, alternative: Alternative, direction: Direction) {
+  const lowBoundary = 0;
+  let low = direction === 'increase' ? controlRate : lowBoundary;
+  let high = direction === 'increase' ? Math.max(controlRate * 2, controlRate + 1, 1) : controlRate;
+
+  if (direction === 'increase') {
+    while ((twoPoissonRatePower(controlExposure, treatmentExposure, alpha, alternative, controlRate, high) || 0) < targetPower && high < 100000) high *= 2;
+    if (high >= 100000) return null;
+  } else if ((twoPoissonRatePower(controlExposure, treatmentExposure, alpha, alternative, controlRate, lowBoundary) || 0) < targetPower) {
+    return null;
+  }
+
+  for (let i = 0; i < 60; i++) {
+    const mid = (low + high) / 2;
+    const midPower = twoPoissonRatePower(controlExposure, treatmentExposure, alpha, alternative, controlRate, mid) || 0;
+    if (direction === 'increase') {
+      if (midPower >= targetPower) high = mid;
+      else low = mid;
+    } else {
+      if (midPower >= targetPower) low = mid;
+      else high = mid;
+    }
+  }
+
+  return direction === 'increase' ? high : low;
+}
+
 function invalidResult(note: string): Result {
   return {
     mode: 'sample-size',
@@ -535,30 +873,115 @@ function invalidResult(note: string): Result {
 }
 
 export default function PowerSampleSizeModule() {
-  const [activeTab, setActiveTab] = useState<TabId>('one-sample');
-  const [alphaInput, setAlphaInput] = useState('0.05');
-  const [powerInput, setPowerInput] = useState('0.90');
-  const [alternative, setAlternative] = useState<Alternative>('two-sided');
+  const savedSettings = useMemo(() => loadPowerSettings(), []);
+  const [activeTab, setActiveTab] = useState<TabId>(savedSettings.activeTab);
+  const [alphaInput, setAlphaInput] = useState(savedSettings.alphaInput);
+  const [powerInput, setPowerInput] = useState(savedSettings.powerInput);
+  const [alternative, setAlternative] = useState<Alternative>(savedSettings.alternative);
 
-  const [oneDeltaInput, setOneDeltaInput] = useState('1');
-  const [oneSigmaInput, setOneSigmaInput] = useState('2');
-  const [oneNInput, setOneNInput] = useState('');
+  const [oneDeltaInput, setOneDeltaInput] = useState(savedSettings.oneDeltaInput);
+  const [oneSigmaInput, setOneSigmaInput] = useState(savedSettings.oneSigmaInput);
+  const [oneNInput, setOneNInput] = useState(savedSettings.oneNInput);
+  const [oneNonparametric, setOneNonparametric] = useState(savedSettings.oneNonparametric);
 
-  const [twoDeltaInput, setTwoDeltaInput] = useState('1');
-  const [twoSigmaInput, setTwoSigmaInput] = useState('2');
-  const [allocationInput, setAllocationInput] = useState('1');
-  const [twoControlNInput, setTwoControlNInput] = useState('');
+  const [twoDeltaInput, setTwoDeltaInput] = useState(savedSettings.twoDeltaInput);
+  const [twoSigmaInput, setTwoSigmaInput] = useState(savedSettings.twoSigmaInput);
+  const [twoControlNInput, setTwoControlNInput] = useState(savedSettings.twoControlNInput);
+  const [twoNonparametric, setTwoNonparametric] = useState(savedSettings.twoNonparametric);
 
-  const [groupsInput, setGroupsInput] = useState('3');
-  const [anovaEffectInput, setAnovaEffectInput] = useState('0.25');
-  const [anovaTotalNInput, setAnovaTotalNInput] = useState('');
+  const [groupsInput, setGroupsInput] = useState(savedSettings.groupsInput);
+  const [anovaEffectInput, setAnovaEffectInput] = useState(savedSettings.anovaEffectInput);
+  const [anovaTotalNInput, setAnovaTotalNInput] = useState(savedSettings.anovaTotalNInput);
+  const [anovaNonparametric, setAnovaNonparametric] = useState(savedSettings.anovaNonparametric);
 
-  const [propMode, setPropMode] = useState<'one' | 'two'>('one');
-  const [propDirection, setPropDirection] = useState<Direction>('increase');
-  const [p0Input, setP0Input] = useState('0.10');
-  const [p1Input, setP1Input] = useState('0.15');
-  const [p2Input, setP2Input] = useState('0.20');
-  const [propNInput, setPropNInput] = useState('');
+  const [propMode, setPropMode] = useState<'one' | 'two'>(savedSettings.propMode);
+  const [propDirection, setPropDirection] = useState<Direction>(savedSettings.propDirection);
+  const [p0Input, setP0Input] = useState(savedSettings.p0Input);
+  const [p1Input, setP1Input] = useState(savedSettings.p1Input);
+  const [p2Input, setP2Input] = useState(savedSettings.p2Input);
+  const [propNInput, setPropNInput] = useState(savedSettings.propNInput);
+  const [poissonMode, setPoissonMode] = useState<'one' | 'two'>(savedSettings.poissonMode);
+  const [poissonDirection, setPoissonDirection] = useState<Direction>(savedSettings.poissonDirection);
+  const [poissonUnitLabel, setPoissonUnitLabel] = useState(savedSettings.poissonUnitLabel);
+  const [poissonBaselineRateInput, setPoissonBaselineRateInput] = useState(savedSettings.poissonBaselineRateInput);
+  const [poissonExpectedRateInput, setPoissonExpectedRateInput] = useState(savedSettings.poissonExpectedRateInput);
+  const [poissonExposureInput, setPoissonExposureInput] = useState(savedSettings.poissonExposureInput);
+  const [poissonControlRateInput, setPoissonControlRateInput] = useState(savedSettings.poissonControlRateInput);
+  const [poissonTreatmentRateInput, setPoissonTreatmentRateInput] = useState(savedSettings.poissonTreatmentRateInput);
+  const [poissonFixedControlExposureInput, setPoissonFixedControlExposureInput] = useState(savedSettings.poissonFixedControlExposureInput);
+  const [poissonTreatmentExposureInput, setPoissonTreatmentExposureInput] = useState(savedSettings.poissonTreatmentExposureInput);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const settings: PowerSettings = {
+      activeTab,
+      alphaInput,
+      powerInput,
+      alternative,
+      oneDeltaInput,
+      oneSigmaInput,
+      oneNInput,
+      oneNonparametric,
+      twoDeltaInput,
+      twoSigmaInput,
+      twoControlNInput,
+      twoNonparametric,
+      groupsInput,
+      anovaEffectInput,
+      anovaTotalNInput,
+      anovaNonparametric,
+      propMode,
+      propDirection,
+      p0Input,
+      p1Input,
+      p2Input,
+      propNInput,
+      poissonMode,
+      poissonDirection,
+      poissonUnitLabel,
+      poissonBaselineRateInput,
+      poissonExpectedRateInput,
+      poissonExposureInput,
+      poissonControlRateInput,
+      poissonTreatmentRateInput,
+      poissonFixedControlExposureInput,
+      poissonTreatmentExposureInput
+    };
+    window.localStorage.setItem(POWER_SETTINGS_KEY, JSON.stringify(settings));
+  }, [
+    activeTab,
+    alphaInput,
+    powerInput,
+    alternative,
+    oneDeltaInput,
+    oneSigmaInput,
+    oneNInput,
+    oneNonparametric,
+    twoDeltaInput,
+    twoSigmaInput,
+    twoControlNInput,
+    twoNonparametric,
+    groupsInput,
+    anovaEffectInput,
+    anovaTotalNInput,
+    anovaNonparametric,
+    propMode,
+    propDirection,
+    p0Input,
+    p1Input,
+    p2Input,
+    propNInput,
+    poissonMode,
+    poissonDirection,
+    poissonUnitLabel,
+    poissonBaselineRateInput,
+    poissonExpectedRateInput,
+    poissonExposureInput,
+    poissonControlRateInput,
+    poissonTreatmentRateInput,
+    poissonFixedControlExposureInput,
+    poissonTreatmentExposureInput
+  ]);
 
   const alpha = clamp(parseOptional(alphaInput) ?? 0.05, 0.0001, 0.999);
   const power = parseOptional(powerInput);
@@ -569,7 +992,6 @@ export default function PowerSampleSizeModule() {
   const oneN = parseOptional(oneNInput);
   const twoDelta = parseOptional(twoDeltaInput);
   const twoSigma = parseOptional(twoSigmaInput);
-  const allocation = parseOptional(allocationInput);
   const twoControlN = parseOptional(twoControlNInput);
   const groups = parseOptional(groupsInput);
   const anovaEffect = parseOptional(anovaEffectInput);
@@ -578,14 +1000,27 @@ export default function PowerSampleSizeModule() {
   const p1 = parseOptional(p1Input);
   const p2 = parseOptional(p2Input);
   const propN = parseOptional(propNInput);
+  const poissonBaselineRate = parseOptional(poissonBaselineRateInput);
+  const poissonExpectedRate = parseOptional(poissonExpectedRateInput);
+  const poissonExposure = parseOptional(poissonExposureInput);
+  const poissonControlRate = parseOptional(poissonControlRateInput);
+  const poissonTreatmentRate = parseOptional(poissonTreatmentRateInput);
+  const poissonFixedControlExposure = parseOptional(poissonFixedControlExposureInput);
+  const poissonTreatmentExposure = parseOptional(poissonTreatmentExposureInput);
 
-  const oneSample = useMemo(() => solveOneSample(alpha, alternative, power, oneDelta, oneSigma, oneN), [alpha, alternative, power, oneDelta, oneSigma, oneN]);
-  const twoSample = useMemo(() => solveTwoSample(alpha, alternative, power, twoDelta, twoSigma, allocation, twoControlN), [alpha, alternative, power, twoDelta, twoSigma, allocation, twoControlN]);
-  const anova = useMemo(() => solveAnova(alpha, alternative, power, anovaEffect, groups, anovaTotalN), [alpha, alternative, power, anovaEffect, groups, anovaTotalN]);
+  const oneSample = useMemo(() => solveOneSample(alpha, alternative, power, oneDelta, oneSigma, oneN, oneNonparametric), [alpha, alternative, power, oneDelta, oneSigma, oneN, oneNonparametric]);
+  const twoSample = useMemo(() => solveTwoSample(alpha, alternative, power, twoDelta, twoSigma, twoControlN, twoNonparametric), [alpha, alternative, power, twoDelta, twoSigma, twoControlN, twoNonparametric]);
+  const anova = useMemo(() => solveAnova(alpha, alternative, power, anovaEffect, groups, anovaTotalN, anovaNonparametric), [alpha, alternative, power, anovaEffect, groups, anovaTotalN, anovaNonparametric]);
   const proportions = useMemo(() => {
     if (propMode === 'one') return solveOneProportion(alpha, alternative, power, p0, p1, propN, propDirection);
     return solveTwoProportion(alpha, alternative, power, p1, p2, propN, propDirection);
   }, [alpha, alternative, power, p0, p1, p2, propN, propMode, propDirection]);
+  const poisson = useMemo(() => {
+    if (poissonMode === 'one') {
+      return solveOnePoissonRate(alpha, alternative, power, poissonBaselineRate, poissonExpectedRate, poissonExposure, poissonDirection, poissonUnitLabel);
+    }
+    return solveTwoPoissonRates(alpha, alternative, power, poissonControlRate, poissonTreatmentRate, poissonFixedControlExposure, poissonTreatmentExposure, poissonDirection, poissonUnitLabel);
+  }, [alpha, alternative, power, poissonMode, poissonBaselineRate, poissonExpectedRate, poissonExposure, poissonControlRate, poissonTreatmentRate, poissonFixedControlExposure, poissonTreatmentExposure, poissonDirection, poissonUnitLabel]);
 
   const oneCurve = useMemo(() => {
     const effect = oneSample.effect ?? oneDelta;
@@ -595,11 +1030,16 @@ export default function PowerSampleSizeModule() {
 
   const twoCurve = useMemo(() => {
     const effect = twoSample.effect ?? twoDelta;
-    const ratio = Math.max(allocation || 1, 0.01);
     if (!positive(effect) || !positive(twoSigma)) return [];
-    const maxControlN = Math.max(Math.ceil((twoSample.targetN || (twoControlN ? twoControlN * (1 + ratio) : 80)) / (1 + ratio)), 10);
-    return buildCurve(maxControlN * 1.5, n => twoSampleMeanPower(n, alpha, alternative, effect, twoSigma, ratio) ?? 0);
-  }, [twoSample.effect, twoSample.targetN, twoDelta, twoSigma, allocation, twoControlN, alpha, alternative]);
+    if (positive(twoControlN)) {
+      const control = Math.ceil(twoControlN);
+      const maxTreatmentN = Math.max((twoSample.targetN ? twoSample.targetN - control : 80), 10);
+      return buildCurve(maxTreatmentN * 1.5, n => twoSampleMeanPower(control, n, alpha, alternative, effect, twoSigma) ?? 0);
+    }
+
+    const maxPerGroup = Math.max(Math.ceil((twoSample.targetN || 80) / 2), 10);
+    return buildCurve(maxPerGroup * 1.5, n => twoSampleMeanPower(n, n, alpha, alternative, effect, twoSigma) ?? 0);
+  }, [twoSample.effect, twoSample.targetN, twoDelta, twoSigma, twoControlN, alpha, alternative]);
 
   const anovaCurve = useMemo(() => {
     const effect = anova.effect ?? anovaEffect;
@@ -623,6 +1063,23 @@ export default function PowerSampleSizeModule() {
     const maxPerGroup = Math.max(Math.ceil((proportions.targetN || (propN ? propN * 2 : 120)) / 2), 20);
     return buildCurve(maxPerGroup * 1.5, n => twoProportionPower(n, alpha, alternative, p1, pAlt));
   }, [propMode, proportions.effect, proportions.targetN, p0, p1, p2, propN, propDirection, alpha, alternative]);
+
+  const poissonCurve = useMemo(() => {
+    if (poissonMode === 'one') {
+      if (!nonnegative(poissonBaselineRate) || !nonnegative(poissonExpectedRate) || (poissonBaselineRate === 0 && poissonExpectedRate === 0)) return [];
+      return buildCurve(Math.max(poisson.targetN || poissonExposure || 100, 30) * 1.5, n => onePoissonRatePower(n, alpha, alternative, poissonBaselineRate, poissonExpectedRate) ?? 0);
+    }
+
+    if (!nonnegative(poissonControlRate) || !nonnegative(poissonTreatmentRate) || (poissonControlRate === 0 && poissonTreatmentRate === 0)) return [];
+    if (positive(poissonFixedControlExposure)) {
+      const controlExposure = Math.ceil(poissonFixedControlExposure);
+      const maxTreatmentExposure = Math.max((poisson.targetN ? poisson.targetN - controlExposure : poissonTreatmentExposure || 100), 30);
+      return buildCurve(maxTreatmentExposure * 1.5, n => twoPoissonRatePower(controlExposure, n, alpha, alternative, poissonControlRate, poissonTreatmentRate) ?? 0);
+    }
+
+    const maxPerGroup = Math.max(Math.ceil((poisson.targetN || (poissonTreatmentExposure ? poissonTreatmentExposure * 2 : 120)) / 2), 30);
+    return buildCurve(maxPerGroup * 1.5, n => twoPoissonRatePower(n, n, alpha, alternative, poissonControlRate, poissonTreatmentRate) ?? 0);
+  }, [poissonMode, poisson.effect, poisson.targetN, poissonBaselineRate, poissonExpectedRate, poissonExposure, poissonControlRate, poissonTreatmentRate, poissonFixedControlExposure, poissonTreatmentExposure, alpha, alternative]);
 
   return (
     <div className="p-6 bg-slate-900 text-slate-100 min-h-screen">
@@ -682,7 +1139,7 @@ export default function PowerSampleSizeModule() {
             </select>
           </label>
           <div className="border-t border-slate-700 pt-4 text-xs leading-5 text-slate-500">
-            Leave <span className="text-slate-300">Power</span> blank to solve achieved power. Leave the effect field blank to solve the detectable delta, Cohen's f, or proportion.
+            Leave <span className="text-slate-300">Power</span> blank to solve achieved power. Leave the effect field blank to solve the detectable delta, Cohen's f, proportion, or rate.
           </div>
         </div>
 
@@ -694,6 +1151,7 @@ export default function PowerSampleSizeModule() {
                 <NumberField label="Difference to Detect" value={oneDeltaInput} setValue={changeValue(setOneDeltaInput)} step={0.1} min={0.001} placeholder="blank = solve difference" />
                 <NumberField label="Estimated Standard Deviation" value={oneSigmaInput} setValue={changeValue(setOneSigmaInput)} step={0.1} min={0.001} />
                 <NumberField label="Sample Size" value={oneNInput} setValue={changeValue(setOneNInput)} step={1} min={1} placeholder="needed when solving power or difference" />
+                <NonparametricToggle checked={oneNonparametric} setChecked={setOneNonparametric} />
               </div>
               <ResultPanel result={oneSample} />
               {oneCurve.length > 0 && <PowerCurve title="Power Curve" data={oneCurve} targetPower={targetPower} targetN={oneSample.targetN} />}
@@ -706,11 +1164,11 @@ export default function PowerSampleSizeModule() {
                 <h3 className="text-lg font-bold text-white">Two Sample Means</h3>
                 <NumberField label="Difference to Detect" value={twoDeltaInput} setValue={changeValue(setTwoDeltaInput)} step={0.1} min={0.001} placeholder="blank = solve difference" />
                 <NumberField label="Estimated Pooled Standard Deviation" value={twoSigmaInput} setValue={changeValue(setTwoSigmaInput)} step={0.1} min={0.001} />
-                <NumberField label="Treatment / Control Allocation" value={allocationInput} setValue={changeValue(setAllocationInput)} step={0.1} min={0.01} />
-                <NumberField label="Control Sample Size" value={twoControlNInput} setValue={changeValue(setTwoControlNInput)} step={1} min={1} placeholder="needed when solving power or difference" />
+                <NumberField label="Control Sample Size (if limited)" value={twoControlNInput} setValue={changeValue(setTwoControlNInput)} step={1} min={1} placeholder="blank = balanced groups" />
+                <NonparametricToggle checked={twoNonparametric} setChecked={setTwoNonparametric} />
               </div>
               <ResultPanel result={twoSample} />
-              {twoCurve.length > 0 && <PowerCurve title="Power Curve by Control Sample Size" data={twoCurve} targetPower={targetPower} targetN={twoSample.targetN && allocation ? Math.ceil(twoSample.targetN / (1 + Math.max(allocation, 0.01))) : twoControlN} />}
+              {twoCurve.length > 0 && <PowerCurve title={twoControlN ? 'Power Curve by Treatment Sample Size' : 'Power Curve by Sample Size Per Group'} data={twoCurve} targetPower={targetPower} targetN={twoControlN && twoSample.targetN ? twoSample.targetN - Math.ceil(twoControlN) : twoSample.targetN ? Math.ceil(twoSample.targetN / 2) : null} />}
             </div>
           )}
 
@@ -721,6 +1179,7 @@ export default function PowerSampleSizeModule() {
                 <NumberField label="Number of Groups" value={groupsInput} setValue={changeValue(setGroupsInput)} step={1} min={2} />
                 <NumberField label="Cohen's f Effect Size" value={anovaEffectInput} setValue={changeValue(setAnovaEffectInput)} step={0.01} min={0.01} placeholder="blank = solve effect" />
                 <NumberField label="Total Sample Size" value={anovaTotalNInput} setValue={changeValue(setAnovaTotalNInput)} step={1} min={2} placeholder="needed when solving power or effect" />
+                <NonparametricToggle checked={anovaNonparametric} setChecked={setAnovaNonparametric} />
               </div>
               <ResultPanel result={anova} />
               {anovaCurve.length > 0 && <PowerCurve title="Power Curve by Total Sample Size" data={anovaCurve} targetPower={targetPower} targetN={anova.targetN} />}
@@ -762,6 +1221,61 @@ export default function PowerSampleSizeModule() {
               </div>
               <ResultPanel result={proportions} />
               {propCurve.length > 0 && <PowerCurve title={propMode === 'one' ? 'Power Curve' : 'Power Curve by Sample Size Per Group'} data={propCurve} targetPower={targetPower} targetN={propMode === 'one' ? proportions.targetN : proportions.targetN ? proportions.targetN / 2 : propN} />}
+            </div>
+          )}
+
+          {activeTab === 'poisson' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-white">Poisson Rates</h3>
+                <div className="grid grid-cols-2 gap-2 bg-slate-950 border border-slate-700 rounded p-1">
+                  <button onClick={() => setPoissonMode('one')} className={`py-2 text-sm rounded ${poissonMode === 'one' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>1 Sample</button>
+                  <button onClick={() => setPoissonMode('two')} className={`py-2 text-sm rounded ${poissonMode === 'two' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>2 Sample</button>
+                </div>
+                <div className="rounded border border-slate-700 bg-slate-950/70 p-3 text-xs leading-5 text-slate-400">
+                  Use Poisson rate tools when counting events over area, time, opportunity, or exposure, such as defects per unit, errors per invoice, calls per hour, or incidents per month.
+                  Use Proportion tools when each item is pass/fail, defective/not defective, yes/no, or success/failure.
+                </div>
+                <TextField label="Exposure Unit Label" value={poissonUnitLabel} setValue={setPoissonUnitLabel} placeholder="unit, hour, transaction, month" />
+                <label className="block">
+                  <span className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Blank Rate Direction</span>
+                  <select
+                    value={poissonDirection}
+                    onChange={e => setPoissonDirection(e.target.value as Direction)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-100 outline-none focus:border-sky-400"
+                  >
+                    <option value="increase">Increase</option>
+                    <option value="decrease">Decrease</option>
+                  </select>
+                </label>
+                {poissonMode === 'one' ? (
+                  <>
+                    <NumberField label="Baseline / Hypothesized Rate" value={poissonBaselineRateInput} setValue={changeValue(setPoissonBaselineRateInput)} step={0.01} min={0} />
+                    <NumberField label="Alternative / Expected Rate" value={poissonExpectedRateInput} setValue={changeValue(setPoissonExpectedRateInput)} step={0.01} min={0} placeholder="blank = solve rate" />
+                    <NumberField label="Sample Size / Exposure Units" value={poissonExposureInput} setValue={changeValue(setPoissonExposureInput)} step={1} min={1} placeholder="needed when solving power or rate" />
+                  </>
+                ) : (
+                  <>
+                    <NumberField label="Control / Baseline Rate" value={poissonControlRateInput} setValue={changeValue(setPoissonControlRateInput)} step={0.01} min={0} />
+                    <NumberField label="Treatment / Comparison Rate" value={poissonTreatmentRateInput} setValue={changeValue(setPoissonTreatmentRateInput)} step={0.01} min={0} placeholder="blank = solve rate" />
+                    <NumberField label="Control Exposure (if limited)" value={poissonFixedControlExposureInput} setValue={changeValue(setPoissonFixedControlExposureInput)} step={1} min={1} placeholder="blank = balanced groups" />
+                    <NumberField label="Treatment Exposure / Sample Size" value={poissonTreatmentExposureInput} setValue={changeValue(setPoissonTreatmentExposureInput)} step={1} min={1} placeholder="needed when solving power or rate" />
+                  </>
+                )}
+              </div>
+              <ResultPanel result={poisson} />
+              {poissonCurve.length > 0 && (
+                <PowerCurve
+                  title={poissonMode === 'one'
+                    ? 'Power Curve by Exposure'
+                    : poissonFixedControlExposure ? 'Power Curve by Treatment Exposure' : 'Power Curve by Exposure Per Group'}
+                  data={poissonCurve}
+                  targetPower={targetPower}
+                  targetN={poissonMode === 'one'
+                    ? poisson.targetN
+                    : poissonFixedControlExposure && poisson.targetN ? poisson.targetN - Math.ceil(Number(poissonFixedControlExposure)) : poisson.targetN ? Math.ceil(poisson.targetN / 2) : null}
+                />
+              )}
             </div>
           )}
         </div>
