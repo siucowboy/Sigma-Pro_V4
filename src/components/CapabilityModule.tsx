@@ -1,16 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import {
-  ComposedChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceArea,
-  ReferenceLine
-} from 'recharts';
-
 import ExportWrapper from './ExportWrapper';
 
 // NOTE: We will build these exact functions when we tackle src/lib/stats.ts
@@ -114,7 +102,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
 
     const maxCount = Math.max(0, ...histData.map(h => h.count));
     const maxCurveY = Math.max(0, ...curveData.map(c => c.y));
-    const yMax = Math.max(maxCount, maxCurveY, 1);
+    const yMax = Math.max(maxCount, maxCurveY, 1) * 1.08;
 
     return { histogram: histData, curve: curveData, domain: sharedDomain, yMax };
   }, [results, rawData, usl, lsl, target]);
@@ -322,67 +310,14 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           <ExportWrapper fileName="capability-histogram">
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 h-[400px]">
                {rawData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData.curve.length ? chartData.curve : chartData.histogram} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                      
-                      <XAxis 
-                        dataKey="x" 
-                        type="number" 
-                        domain={chartData.domain as [number, number]} 
-                        tick={{fill: '#94a3b8', fontSize: 12}}
-                        tickFormatter={formatAxisValue}
-                      />
-                      <YAxis domain={[0, chartData.yMax]} tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={formatAxisValue} />
-                      
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }}
-                        itemStyle={{ color: '#e2e8f0' }}
-                        labelFormatter={formatAxisValue}
-                      />
- 
-                      {chartData.histogram.map((bin: any, index: number) => (
-                        <React.Fragment key={`${bin.min}-${bin.max}-${index}`}>
-                        <ReferenceArea
-                          x1={bin.min}
-                          x2={bin.max}
-                          y1={0}
-                          y2={bin.count}
-                          ifOverflow="visible"
-                          shape={(props: any) => (
-                            <rect
-                              x={props.x}
-                              y={props.y}
-                              width={props.width}
-                              height={props.height}
-                              fill="#64748b"
-                              fillOpacity={0.75}
-                              stroke="#94a3b8"
-                              strokeOpacity={0.35}
-                            />
-                          )}
-                        />
-                        </React.Fragment>
-                      ))}
-
-                      {results?.isNormal && (
-                        <Line 
-                          data={chartData.curve}
-                          type="monotone" 
-                          dataKey="y" 
-                          stroke="#38bdf8" 
-                          strokeWidth={3} 
-                          dot={false} 
-                          isAnimationActive={false} 
-                          connectNulls={true}
-                        />
-                      )}
-
-                     {lsl !== '' && <ReferenceLine x={Number(lsl)} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'LSL', fill: '#ef4444', fontSize: 12 }} />}
-                     {usl !== '' && <ReferenceLine x={Number(usl)} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'USL', fill: '#ef4444', fontSize: 12 }} />}
-                     {target !== '' && <ReferenceLine x={Number(target)} stroke="#22c55e" label={{ position: 'top', value: 'Target', fill: '#22c55e', fontSize: 12 }} />}
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <CapabilityDistributionChart
+                    chartData={chartData}
+                    showNormalCurve={Boolean(results?.isNormal)}
+                    lsl={lsl}
+                    usl={usl}
+                    target={target}
+                    formatAxisValue={formatAxisValue}
+                  />
                ) : (
                  <div className="flex items-center justify-center h-full text-slate-500">Select a dataset to view distribution</div>
                )}
@@ -425,4 +360,127 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
       </div>
     </div>
   );
+}
+
+function CapabilityDistributionChart({
+  chartData,
+  showNormalCurve,
+  lsl,
+  usl,
+  target,
+  formatAxisValue
+}: {
+  chartData: any;
+  showNormalCurve: boolean;
+  lsl: number | '';
+  usl: number | '';
+  target: number | '';
+  formatAxisValue: (value: any) => string;
+}) {
+  const width = 1000;
+  const height = 360;
+  const margin = { top: 18, right: 24, bottom: 34, left: 56 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const [domainMin, domainMax] = chartData.domain as [number, number];
+  const yMax = chartData.yMax || 1;
+  const xSpan = domainMax - domainMin || 1;
+
+  const xScale = (value: number) => margin.left + ((value - domainMin) / xSpan) * plotWidth;
+  const yScale = (value: number) => margin.top + plotHeight - (Math.max(0, value) / yMax) * plotHeight;
+  const xTicks = buildTicks(domainMin, domainMax, 5);
+  const yTicks = buildTicks(0, yMax, 5);
+  const curvePath = showNormalCurve && chartData.curve.length
+    ? chartData.curve
+        .map((point: any, index: number) => `${index === 0 ? 'M' : 'L'} ${xScale(point.x).toFixed(2)} ${yScale(point.y).toFixed(2)}`)
+        .join(' ')
+    : '';
+  const specLines = [
+    lsl !== '' ? { x: Number(lsl), label: 'LSL', color: '#ef4444', dashed: true } : null,
+    usl !== '' ? { x: Number(usl), label: 'USL', color: '#ef4444', dashed: true } : null,
+    target !== '' ? { x: Number(target), label: 'Target', color: '#22c55e', dashed: false } : null
+  ].filter(Boolean) as Array<{ x: number; label: string; color: string; dashed: boolean }>;
+
+  return (
+    <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
+      <rect x={0} y={0} width={width} height={height} fill="transparent" />
+      {yTicks.map((tick) => {
+        const y = yScale(tick);
+        return (
+          <g key={`y-${tick}`}>
+            <line x1={margin.left} x2={width - margin.right} y1={y} y2={y} stroke="#334155" strokeDasharray="3 3" />
+            <text x={margin.left - 8} y={y + 4} textAnchor="end" fill="#94a3b8" fontSize="12" vectorEffect="non-scaling-stroke">
+              {formatAxisValue(tick)}
+            </text>
+          </g>
+        );
+      })}
+
+      {chartData.histogram.map((bin: any, index: number) => {
+        const x1 = xScale(bin.min);
+        const x2 = xScale(bin.max);
+        const y = yScale(bin.count);
+        const barWidth = Math.max(1, x2 - x1 - 1);
+        return (
+          <rect
+            key={`bin-${index}`}
+            x={x1}
+            y={y}
+            width={barWidth}
+            height={Math.max(0, margin.top + plotHeight - y)}
+            fill="#64748b"
+            fillOpacity="0.78"
+            stroke="#94a3b8"
+            strokeOpacity="0.45"
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+      })}
+
+      {curvePath && (
+        <path d={curvePath} fill="none" stroke="#38bdf8" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+      )}
+
+      {specLines.map((line) => {
+        const x = xScale(line.x);
+        if (x < margin.left || x > width - margin.right) return null;
+        return (
+          <g key={line.label}>
+            <line
+              x1={x}
+              x2={x}
+              y1={margin.top}
+              y2={margin.top + plotHeight}
+              stroke={line.color}
+              strokeWidth="2"
+              strokeDasharray={line.dashed ? '5 5' : undefined}
+              vectorEffect="non-scaling-stroke"
+            />
+            <text x={x + 5} y={margin.top + 13} fill={line.color} fontSize="12" vectorEffect="non-scaling-stroke">
+              {line.label}
+            </text>
+          </g>
+        );
+      })}
+
+      <line x1={margin.left} x2={margin.left} y1={margin.top} y2={margin.top + plotHeight} stroke="#64748b" vectorEffect="non-scaling-stroke" />
+      <line x1={margin.left} x2={width - margin.right} y1={margin.top + plotHeight} y2={margin.top + plotHeight} stroke="#64748b" vectorEffect="non-scaling-stroke" />
+
+      {xTicks.map((tick) => {
+        const x = xScale(tick);
+        return (
+          <text key={`x-${tick}`} x={x} y={height - 10} textAnchor="middle" fill="#94a3b8" fontSize="12" vectorEffect="non-scaling-stroke">
+            {formatAxisValue(tick)}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+function buildTicks(min: number, max: number, count: number) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || count < 2) return [];
+  const span = max - min;
+  if (span === 0) return [min];
+  return Array.from({ length: count }, (_, index) => min + (span * index) / (count - 1));
 }
