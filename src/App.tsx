@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Database, BarChart2, Activity, TrendingUp, Grid, GitCommit, Calculator, Sun, Moon } from 'lucide-react';
+import { Database, BarChart2, Activity, TrendingUp, Grid, GitCommit, Calculator, Sun, Moon, Network } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import DataManager from './components/DataManager';
 import CapabilityModule from './components/CapabilityModule';
 import PowerSampleSizeModule from './components/PowerSampleSizeModule';
 import HypothesisModule from './components/HypothesisModule';
 import RegressionModule from './components/RegressionModule';
+import LogisticRegressionModule from './components/LogisticRegressionModule';
 import DOEModule from './components/DOEModule';
 import SPCModule from './components/SPCModule';
 
@@ -78,6 +79,7 @@ export default function App() {
     { id: 'power', label: 'Power and Sample Size', icon: Calculator },
     { id: 'hypothesis', label: 'Hypothesis Tests', icon: Activity },
     { id: 'regression', label: 'Regression Analysis', icon: TrendingUp },
+    { id: 'logistic', label: 'Logistic Regression', icon: Network },
     { id: 'doe', label: 'Factorial DOE', icon: Grid },
     { id: 'spc', label: 'Control Charts', icon: GitCommit },
   ];
@@ -127,6 +129,7 @@ export default function App() {
         <div className={activeTab === 'power' ? 'block h-full' : 'hidden'}><PowerSampleSizeModule /></div>
         <div className={activeTab === 'hypothesis' ? 'block h-full' : 'hidden'}><HypothesisModule datasets={datasets} /></div>
         <div className={activeTab === 'regression' ? 'block h-full' : 'hidden'}><RegressionModule datasets={datasets} /></div>
+        <div className={activeTab === 'logistic' ? 'block h-full' : 'hidden'}><LogisticRegressionModule datasets={datasets} /></div>
         <div className={activeTab === 'doe' ? 'block h-full' : 'hidden'}><DOEModule datasets={datasets} /></div>
         <div className={activeTab === 'spc' ? 'block h-full' : 'hidden'}><SPCModule datasets={datasets} /></div>
       </div>
