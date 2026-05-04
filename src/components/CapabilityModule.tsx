@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import {
   ComposedChart,
-  Bar,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceArea,
   ReferenceLine
 } from 'recharts';
 
@@ -39,7 +39,12 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
 
   // --- Derived Data & Calculations ---
   const activeDataset = datasets.find(d => d.id === selectedDataId);
-  const rawData = activeDataset?.values || [];
+  const rawData = useMemo(
+    () => (activeDataset?.values || [])
+      .map((value: any) => Number(value))
+      .filter((value: number) => Number.isFinite(value)),
+    [activeDataset]
+  );
 
   // Default subgroup size to total on data selection
   React.useEffect(() => {
@@ -84,7 +89,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
 
   // Generate Chart Data (Dynamic Bins + PDF Curve)
   const chartData = useMemo(() => {
-    if (!results || !rawData.length) return { histogram: [], curve: [], domain: [0, 100], barSize: 40 };
+    if (!results || !rawData.length) return { histogram: [], curve: [], domain: [0, 100], yMax: 10 };
     
     // Dynamic binning
     const histData = generateDynamicHistogram(rawData); 
@@ -107,20 +112,11 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
     const padding = (finalMax - finalMin) * 0.1 || 1;
     const sharedDomain = [finalMin - padding, finalMax + padding];
 
-    const binWidth = histData.length > 0 ? (histData[0].max - histData[0].min) : 1;
-    const domainWidth = (sharedDomain[1] - sharedDomain[0]) || 1;
-    
-    // For numeric axis, Recharts Bar needs barSize in pixels.
-    // We'll use a safer estimation that adapts to the number of bins.
-    const barSize = Math.max(15, (binWidth / domainWidth) * 700);
+    const maxCount = Math.max(0, ...histData.map(h => h.count));
+    const maxCurveY = Math.max(0, ...curveData.map(c => c.y));
+    const yMax = Math.max(maxCount, maxCurveY, 1);
 
-    // Merge for stability on numeric axis
-    const merged = [
-      ...histData.map(h => ({ x: h.x, count: h.count })),
-      ...curveData.map(c => ({ x: c.x, curveY: c.y }))
-    ].sort((a, b) => a.x - b.x);
-
-    return { merged, domain: sharedDomain, barSize };
+    return { histogram: histData, curve: curveData, domain: sharedDomain, yMax };
   }, [results, rawData, usl, lsl, target]);
 
   const formatAxisValue = (val: any) => {
@@ -319,7 +315,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 h-[400px]">
                {rawData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData.merged} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
+                    <ComposedChart data={chartData.curve.length ? chartData.curve : chartData.histogram} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                       
                       <XAxis 
@@ -329,7 +325,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
                         tick={{fill: '#94a3b8', fontSize: 12}}
                         tickFormatter={formatAxisValue}
                       />
-                      <YAxis tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={formatAxisValue} />
+                      <YAxis domain={[0, chartData.yMax]} tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={formatAxisValue} />
                       
                       <Tooltip 
                         contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }}
@@ -337,18 +333,35 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
                         labelFormatter={formatAxisValue}
                       />
  
-                      <Bar 
-                        dataKey="count" 
-                        fill="#64748b" 
-                        barSize={chartData.barSize} 
-                        opacity={0.8} 
-                        isAnimationActive={false} 
-                      />
+                      {chartData.histogram.map((bin: any, index: number) => (
+                        <React.Fragment key={`${bin.min}-${bin.max}-${index}`}>
+                        <ReferenceArea
+                          x1={bin.min}
+                          x2={bin.max}
+                          y1={0}
+                          y2={bin.count}
+                          ifOverflow="visible"
+                          shape={(props: any) => (
+                            <rect
+                              x={props.x}
+                              y={props.y}
+                              width={props.width}
+                              height={props.height}
+                              fill="#64748b"
+                              fillOpacity={0.75}
+                              stroke="#94a3b8"
+                              strokeOpacity={0.35}
+                            />
+                          )}
+                        />
+                        </React.Fragment>
+                      ))}
 
                       {results?.isNormal && (
                         <Line 
+                          data={chartData.curve}
                           type="monotone" 
-                          dataKey="curveY" 
+                          dataKey="y" 
                           stroke="#38bdf8" 
                           strokeWidth={3} 
                           dot={false} 
