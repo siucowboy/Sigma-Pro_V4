@@ -1313,31 +1313,31 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                   </div>
 
                   <ExportWrapper fileName="1sample-summary">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-center">
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Estimate</div>
-                        <div className="text-2xl font-mono text-red-500 font-bold">{s1Results.mean.toFixed(3)}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Estimate</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-red-500 font-bold mt-2 truncate tabular-nums">{s1Results.mean.toFixed(3)}</div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Alternative (H₁)</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Alternative (H₁)</div>
                         <div className="text-xs mt-2 font-bold text-sky-400">
                           {s1Alt === 'neq' ? '≠' : s1Alt === 'greater' ? '>' : '<'} Target
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">P-Value</div>
-                        <div className={`text-2xl font-mono font-bold ${s1Results.significant ? 'text-red-500' : 'text-green-500'}`}>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">P-Value</div>
+                        <div className={`text-2xl sm:text-3xl font-mono font-bold mt-2 truncate tabular-nums ${s1Results.significant ? 'text-red-500' : 'text-green-500'}`}>
                           {s1Results.pValue.toFixed(4)}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">
                           {s1Results.testUsed.includes('T-Test') ? 'T-Value' : (s1Results.testUsed.includes('Z-Test') ? 'Z-Value' : 'W-Value')}
                         </div>
-                        <div className="text-2xl font-mono text-slate-200">{s1Results.statistic.toFixed(3)}</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-slate-200 mt-2 truncate tabular-nums">{s1Results.statistic.toFixed(3)}</div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Decision</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Decision</div>
                         <div className={`text-xs mt-2 font-bold ${s1Results.significant ? 'text-red-400' : 'text-green-400'}`}>
                           {s1Results.significant ? 'REJECT NULL' : 'FAIL TO REJECT'}
                         </div>
@@ -1582,40 +1582,6 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                                 </tbody>
                               </table>
                             </div>
-
-                            <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-4">
-                              <div className="bg-slate-900/50 p-3 rounded border border-slate-700">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Alternative (H₁)</p>
-                                  <p className="text-xl font-mono font-bold text-sky-400">
-                                    {s2Alt === 'neq' ? '≠' : s2Alt === 'greater' ? '>' : '<'}
-                                  </p>
-                              </div>
-                              <div className="bg-slate-900/50 p-3 rounded border border-slate-700">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Estimate for difference</p>
-                                  <p className="text-xl font-mono font-bold text-red-500">
-                                    {(s2Analysis.stats.m1 - s2Analysis.stats.m2).toFixed(3)}
-                                  </p>
-                              </div>
-                              <div className="bg-slate-900/50 p-3 rounded border border-slate-700 text-right">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">P-Value</p>
-                                  <p className={`text-xl font-mono font-bold ${s2Analysis.significant ? 'text-red-500' : 'text-slate-200'}`}>
-                                    {s2Analysis.results.pValue.toFixed(3)}
-                                  </p>
-                              </div>
-                              <div className="bg-slate-900/50 p-3 rounded border border-slate-700">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">{(1 - alpha).toFixed(2)} CI for Difference</p>
-                                  <p className="text-xs font-mono font-bold text-red-500">
-                                    [{s2Analysis.ci.data[0].lcl.toFixed(3)} to {s2Analysis.ci.data[0].ucl.toFixed(3)}]
-                                  </p>
-                                  <p className="text-[8px] text-slate-600 italic leading-tight mt-1">*approx derived from individual CIs</p>
-                              </div>
-                              <div className="bg-slate-900/50 p-3 rounded border border-slate-700 text-right">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">{s2Analysis.ci.type === 'Medians' ? 'U-Statistic' : 'T-Value'}</p>
-                                  <p className="text-sm font-mono font-bold text-slate-300">
-                                    {s2Analysis.results.statistic.toFixed(3)}
-                                  </p>
-                              </div>
-                            </div>
                           </div>
                         </ExportWrapper>
                       </div>
@@ -1697,6 +1663,50 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                         </ExportWrapper>
                       </div>
                     </div>
+
+                    <div className="mt-8 pt-8 border-t border-slate-700/50">
+                       <ExportWrapper fileName="2sample-summary-metrics">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-center">
+                          <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                              <p className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[1.5rem] flex items-center justify-center tracking-widest leading-tight">Alternative (H₁)</p>
+                              <p className="text-2xl font-mono font-bold text-sky-400 mt-2">
+                                {s2Alt === 'neq' ? '≠' : s2Alt === 'greater' ? '>' : '<'}
+                              </p>
+                          </div>
+                          <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                              <p className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[1.5rem] flex items-center justify-center tracking-widest leading-tight">Est. Difference</p>
+                              <p className="text-2xl sm:text-3xl font-mono font-bold text-red-500 mt-2 truncate tabular-nums">
+                                {(s2Analysis.stats.m1 - s2Analysis.stats.m2).toFixed(3)}
+                              </p>
+                          </div>
+                          <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                              <p className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[1.5rem] flex items-center justify-center tracking-widest leading-tight">P-Value</p>
+                              <p className={`text-2xl sm:text-3xl font-mono font-bold mt-2 truncate tabular-nums ${s2Analysis.significant ? 'text-red-500' : 'text-green-500'}`}>
+                                {s2Analysis.results.pValue.toFixed(4)}
+                              </p>
+                          </div>
+                          <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                              <p className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[1.5rem] flex items-center justify-center tracking-widest leading-tight">{(1 - alpha).toFixed(2)} Confidence</p>
+                              <div className="mt-2 space-y-1">
+                                <p className="text-sm font-mono font-bold text-red-500 leading-none">
+                                  {s2Analysis.ci.data[0].lcl.toFixed(2)}
+                                </p>
+                                <p className="text-[10px] text-slate-600 uppercase font-bold">to</p>
+                                <p className="text-sm font-mono font-bold text-red-500 leading-none">
+                                  {s2Analysis.ci.data[0].ucl.toFixed(2)}
+                                </p>
+                              </div>
+                              <p className="text-[8px] text-slate-600 italic mt-1 font-bold">*approx derived</p>
+                          </div>
+                          <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                              <p className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[1.5rem] flex items-center justify-center tracking-widest leading-tight">{s2Analysis.ci.type === 'Medians' ? 'U-Stat' : 'T-Val'}</p>
+                              <p className="text-2xl sm:text-3xl font-mono font-bold text-slate-300 mt-2 truncate tabular-nums">
+                                {s2Analysis.results.statistic.toFixed(2)}
+                              </p>
+                          </div>
+                        </div>
+                      </ExportWrapper>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1713,33 +1723,33 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                 <div className="space-y-8">
                   {/* Summary Metric Strip */}
                   <ExportWrapper fileName="anova-summary">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-center">
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Test Value</div>
-                        <div className="text-2xl font-mono text-red-500 font-bold">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Test Value</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-red-500 font-bold mt-2 truncate tabular-nums">
                           {anovaAnalysis.testResults.statistic.toFixed(3)}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">P-Value</div>
-                        <div className={`text-2xl font-mono font-bold ${anovaAnalysis.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">P-Value</div>
+                        <div className={`text-2xl sm:text-3xl font-mono font-bold mt-2 truncate tabular-nums ${anovaAnalysis.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
                           {anovaAnalysis.pValue.toFixed(4)}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Test Used</div>
-                        <div className="text-xs mt-2 font-bold text-slate-300">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Test Used</div>
+                        <div className="text-[10px] mt-2 font-bold text-slate-300">
                           {anovaAnalysis.testUsed}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Alternative (H₁)</div>
-                        <div className="text-xs mt-2 font-bold text-sky-400">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Alternative (H₁)</div>
+                        <div className="text-[10px] mt-2 font-bold text-sky-400">
                           {anovaAlt === 'neq' ? 'Diff exists (≠)' : anovaAlt === 'greater' ? 'Incr. Trend (>)' : 'Decr. Trend (<)'}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Decision</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Decision</div>
                         <div className={`text-xs mt-2 font-bold ${anovaAnalysis.significant ? 'text-red-400' : 'text-green-400'}`}>
                           {anovaAnalysis.significant ? 'REJECT NULL' : 'FAIL TO REJECT'}
                         </div>
@@ -1949,21 +1959,21 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                             < Zap size={14} className="text-amber-500" /> Statistical Indices
                           </h4>
 
-                          <div className="grid grid-cols-3 gap-8">
-                             <div className="text-center">
-                                <div className="text-[10px] text-slate-500 uppercase font-black mb-1">Test Statistic</div>
-                                <div className="text-3xl font-mono text-white font-black">{formatPropValue(varianceAnalysis.testResults.statistic)}</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+                             <div className="text-center flex flex-col h-full">
+                                <div className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[2.5rem] flex items-center justify-center tracking-widest">Test Statistic</div>
+                                <div className="text-2xl sm:text-3xl font-mono text-white font-black mt-2 truncate tabular-nums">{formatPropValue(varianceAnalysis.testResults.statistic)}</div>
                              </div>
-                             <div className="text-center border-x border-slate-800/50">
-                                <div className="text-[10px] text-slate-500 uppercase font-black mb-1">P-Value</div>
-                                <div className={`text-3xl font-mono font-black ${varianceAnalysis.significant ? 'text-amber-500' : 'text-slate-300'}`}>
+                             <div className="text-center border-x border-slate-800/50 flex flex-col h-full">
+                                <div className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[2.5rem] flex items-center justify-center tracking-widest">P-Value</div>
+                                <div className={`text-2xl sm:text-3xl font-mono font-black mt-2 truncate tabular-nums ${varianceAnalysis.significant ? 'text-amber-500' : 'text-slate-300'}`}>
                                   {formatPropValue(varianceAnalysis.pValue)}
                                 </div>
                              </div>
-                             <div className="text-center">
-                                <div className="text-[10px] text-slate-500 uppercase font-black mb-1">D.F.</div>
-                                <div className="text-3xl font-mono text-slate-400 font-black">
-                                   {varianceAnalysis.testResults.df !== undefined ? varianceAnalysis.testResults.df : `${varianceAnalysis.testResults.df1}, ${varianceAnalysis.testResults.df2}`}
+                             <div className="text-center flex flex-col h-full">
+                                <div className="text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[2.5rem] flex items-center justify-center tracking-widest">D.F.</div>
+                                <div className="text-2xl sm:text-3xl font-mono text-slate-400 font-black mt-2 truncate tabular-nums">
+                                   {varianceAnalysis.testResults.df !== undefined ? varianceAnalysis.testResults.df : `${varianceAnalysis.testResults.df1},${varianceAnalysis.testResults.df2}`}
                                 </div>
                              </div>
                           </div>
@@ -2038,29 +2048,29 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
               ) : (
                 <div className="space-y-8">
                   <ExportWrapper fileName="chi-summary">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-center">
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Chi-Square</div>
-                        <div className="text-2xl font-mono text-amber-500 font-bold">{chiResults.statistic.toFixed(3)}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Chi-Square</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-amber-500 font-bold mt-2 truncate tabular-nums">{chiResults.statistic.toFixed(3)}</div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Alternative (H₁)</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Alternative (H₁)</div>
                         <div className="text-xs mt-2 font-bold text-sky-400">
                           Difference exists (≠)
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">P-Value</div>
-                        <div className={`text-2xl font-mono font-bold ${chiResults.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">P-Value</div>
+                        <div className={`text-2xl sm:text-3xl font-mono font-bold mt-2 truncate tabular-nums ${chiResults.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
                           {chiResults.pValue.toFixed(4)}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">DF</div>
-                        <div className="text-2xl font-mono text-slate-200">{chiResults.df}</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">DF</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-slate-200 mt-2 truncate tabular-nums">{chiResults.df}</div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Decision</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Decision</div>
                         <div className={`text-xs mt-2 font-bold ${chiResults.pValue < alpha ? 'text-red-400' : 'text-green-400'}`}>
                           {chiResults.pValue < alpha ? 'REJECT NULL' : 'FAIL TO REJECT'}
                         </div>
@@ -2285,9 +2295,9 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                     <h4 className="text-center font-black italic text-xl text-slate-300 uppercase mb-8 tracking-[0.2em] border-b border-slate-800 pb-4">
                       {propType === '1samp' ? 'Statistical Test Summary' : 'Statistical Comparison Results'}
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 items-start">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 items-stretch">
                       
-                      <div className="space-y-4">
+                      <div className="space-y-4 bg-slate-900/30 p-4 rounded border border-slate-800/50">
                         <table className="w-full text-xs font-mono border-collapse">
                           <thead>
                             <tr className="border-b border-slate-800 uppercase italic">
@@ -2319,23 +2329,23 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                         </div>
                       </div>
 
-                      <div className="space-y-6">
-                        <div className="group border-b border-slate-800 pb-4">
-                          <label className="block text-[10px] text-slate-500 uppercase font-black mb-2 tracking-widest">
+                      <div className="space-y-6 flex flex-col">
+                        <div className="group border-b border-slate-800 pb-4 flex-1">
+                          <label className="block text-[10px] text-slate-500 uppercase font-black mb-2 tracking-widest min-h-[1rem]">
                             {propType === '1samp' ? 'Observed Rate' : 'Estimate of Difference'}
                           </label>
-                          <div className="text-2xl font-mono text-cyan-400 font-black tabular-nums">
+                          <div className="text-2xl sm:text-3xl font-mono text-cyan-400 font-black tabular-nums truncate">
                             {propType === '1samp' 
                               ? (typeof (propResults as any).p1 === 'number' ? formatPropValue((propResults as any).p1, 6) : '--')
                               : (typeof (propResults as any).diff === 'number' ? formatPropValue((propResults as any).diff, 8) : '--')}
                           </div>
                         </div>
 
-                        <div className="group border-b border-slate-800 pb-4">
-                          <label className="block text-[10px] text-slate-500 uppercase font-black mb-2 tracking-widest">
+                        <div className="group border-b border-slate-800 pb-4 flex-1">
+                          <label className="block text-[10px] text-slate-500 uppercase font-black mb-2 tracking-widest min-h-[1rem]">
                             {(1-alpha)*100}% Bound for {propType === '1samp' ? 'Proportion' : 'Difference'}
                           </label>
-                          <div className="text-xl font-mono text-red-500 font-black tabular-nums">
+                          <div className="text-xl sm:text-2xl font-mono text-red-500 font-black tabular-nums truncate">
                             {propType === '1samp'
                               ? `${formatPropValue((propResults as any).ci1.lower)} ↔ ${formatPropValue((propResults as any).ci1.upper)}`
                               : (typeof (propResults as any).diffLower === 'number' 
@@ -2350,20 +2360,20 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
                         </div>
                       </div>
 
-                      <div className="space-y-6">
-                        <div className="grid grid-cols-2 gap-8">
-                          <div className="bg-slate-900 p-4 border border-slate-800 rounded">
-                            <label className="block text-[10px] text-slate-500 uppercase font-black mb-2 tracking-widest">Z-Stat</label>
-                            <div className="text-2xl font-mono text-white">{(propResults as any).statistic.toFixed(2)}</div>
+                      <div className="space-y-6 flex flex-col">
+                        <div className="grid grid-cols-2 gap-4 flex-1">
+                          <div className="bg-slate-900 flex flex-col p-4 border border-slate-800 rounded">
+                            <label className="block text-[10px] text-slate-500 uppercase font-black mb-auto min-h-[1.5rem] tracking-widest">Z-Stat</label>
+                            <div className="text-2xl font-mono text-white mt-1 tabular-nums">{(propResults as any).statistic.toFixed(2)}</div>
                           </div>
-                          <div className={`p-4 border rounded ${propResults.pValue < alpha ? 'bg-red-500/10 border-red-500/50' : 'bg-green-500/10 border-green-500/50'}`}>
-                            <label className="block text-[10px] text-slate-500 uppercase font-black mb-2 tracking-widest">P-Value</label>
-                            <div className={`text-2xl font-mono font-black ${propResults.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
+                          <div className={`p-4 border rounded flex flex-col ${propResults.pValue < alpha ? 'bg-red-500/10 border-red-500/50' : 'bg-green-500/10 border-green-500/50'}`}>
+                            <label className="block text-[10px] text-slate-400 uppercase font-black mb-auto min-h-[1.5rem] tracking-widest">P-Value</label>
+                            <div className={`text-2xl font-mono font-black mt-1 tabular-nums truncate ${propResults.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
                               {propResults.pValue.toFixed(4)}
                             </div>
                           </div>
                         </div>
-                        <div className="p-4 bg-slate-900/50 rounded border border-slate-800">
+                        <div className="p-4 bg-slate-900/50 rounded border border-slate-800 flex-1 flex flex-col justify-center">
                           <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Conclusion</h5>
                           <p className="text-[10px] text-slate-400 leading-relaxed italic">
                             {propResults.pValue < alpha 
@@ -2391,31 +2401,31 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
               ) : (
                 <div className="space-y-8">
                    <ExportWrapper fileName="poisson-summary">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-center">
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Test Statistic</div>
-                        <div className="text-2xl font-mono text-purple-500 font-bold">{poiResults.statistic.toFixed(4)}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Test Statistic</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-purple-500 font-bold mt-2 truncate tabular-nums">{poiResults.statistic.toFixed(4)}</div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Alternative (H₁)</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Alternative (H₁)</div>
                         <div className="text-xs mt-2 font-bold text-sky-400">
                           {poiAlt === 'neq' ? '≠' : poiAlt === 'greater' ? '>' : '<'}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">P-Value</div>
-                        <div className={`text-2xl font-mono font-bold ${poiResults.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">P-Value</div>
+                        <div className={`text-2xl sm:text-3xl font-mono font-bold mt-2 truncate tabular-nums ${poiResults.pValue < alpha ? 'text-red-500' : 'text-green-500'}`}>
                           {poiResults.pValue.toFixed(4)}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">{poiType === '1samp' ? 'Obs. Rate' : 'Diff (R1-R2)'}</div>
-                        <div className="text-2xl font-mono text-slate-200">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">{poiType === '1samp' ? 'Obs. Rate' : 'Diff (R1-R2)'}</div>
+                        <div className="text-2xl sm:text-3xl font-mono text-slate-200 mt-2 truncate tabular-nums">
                            {poiType === '1samp' ? (poiResults as any).rate.toFixed(4) : ((poiResults as any).r1 - (poiResults as any).r2).toFixed(4)}
                         </div>
                       </div>
-                      <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Decision</div>
+                      <div className="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col h-full">
+                        <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-auto min-h-[2.5rem] flex items-center justify-center">Decision</div>
                         <div className={`text-xs mt-2 font-bold ${poiResults.pValue < alpha ? 'text-red-400' : 'text-green-400'}`}>
                           {poiResults.pValue < alpha ? 'REJECT NULL' : 'FAIL TO REJECT'}
                         </div>

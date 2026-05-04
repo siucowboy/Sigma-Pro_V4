@@ -282,27 +282,35 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           {results && (
             <ExportWrapper fileName="capability-indices">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {(analysisIntent === 'both' || analysisIntent === 'shortTerm' || fixedSubgroupSize < rawData.length) && (
+                {analysisIntent !== 'overall' && (
                   <>
-                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider">Cp (Potential ST)</div>
-                      <div className="text-2xl font-mono text-white mt-1">{typeof results.Cp === 'number' ? results.Cp.toFixed(2) : 'N/A'}</div>
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Cp (Potential ST)</div>
+                      <div className="text-2xl sm:text-3xl font-mono text-white mt-2 truncate tabular-nums">
+                        {typeof results.Cp === 'number' ? results.Cp.toFixed(2) : 'N/A'}
+                      </div>
                     </div>
-                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider">Cpk (Within ST)</div>
-                      <div className="text-2xl font-mono text-yellow-400 mt-1">{typeof results.Cpk === 'number' ? results.Cpk.toFixed(2) : 'N/A'}</div>
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Cpk (Within ST)</div>
+                      <div className="text-2xl sm:text-3xl font-mono text-yellow-400 mt-2 truncate tabular-nums">
+                        {typeof results.Cpk === 'number' ? results.Cpk.toFixed(2) : 'N/A'}
+                      </div>
                     </div>
                   </>
                 )}
-                {(analysisIntent === 'both' || analysisIntent === 'overall' || fixedSubgroupSize === rawData.length) && (
+                {analysisIntent !== 'shortTerm' && (
                   <>
-                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider">Pp (Potential LT)</div>
-                      <div className="text-2xl font-mono text-white mt-1">{typeof results.Pp === 'number' ? results.Pp.toFixed(2) : 'N/A'}</div>
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Pp (Potential LT)</div>
+                      <div className="text-2xl sm:text-3xl font-mono text-white mt-2 truncate tabular-nums">
+                        {typeof results.Pp === 'number' ? results.Pp.toFixed(2) : 'N/A'}
+                      </div>
                     </div>
-                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider">Ppk (Overall Actual LT)</div>
-                      <div className="text-2xl font-mono text-cyan-400 mt-1">{typeof results.Ppk === 'number' ? results.Ppk.toFixed(2) : 'N/A'}</div>
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Ppk (Overall Actual LT)</div>
+                      <div className="text-2xl sm:text-3xl font-mono text-cyan-400 mt-2 truncate tabular-nums">
+                        {typeof results.Ppk === 'number' ? results.Ppk.toFixed(2) : 'N/A'}
+                      </div>
                     </div>
                   </>
                 )}
@@ -385,7 +393,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           {results && (
             <ExportWrapper fileName="capability-ppm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(analysisIntent === 'both' || analysisIntent === 'shortTerm' || fixedSubgroupSize < rawData.length) && (
+                {analysisIntent !== 'overall' && (
                   <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
                       <h4 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2 mb-2">Within Performance (Short Term)</h4>
                       <div className="flex justify-between text-sm"><span className="text-slate-400">PPM &lt; LSL:</span> <span className="font-mono text-white">{typeof results.expectedPpmLsl === 'number' ? results.expectedPpmLsl.toFixed(0) : '--'}</span></div>
@@ -397,7 +405,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
                       </div>
                   </div>
                 )}
-                {(analysisIntent === 'both' || analysisIntent === 'overall' || fixedSubgroupSize === rawData.length) && (
+                {analysisIntent !== 'shortTerm' && (
                   <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
                       <h4 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2 mb-2">Overall Performance (Long Term)</h4>
                       <div className="flex justify-between text-sm"><span className="text-slate-400">PPM &lt; LSL:</span> <span className="font-mono text-white">{typeof results.overallPpmLsl === 'number' ? results.overallPpmLsl.toFixed(0) : '--'}</span></div>
