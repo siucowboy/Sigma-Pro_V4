@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calculator, Sigma, Users, Layers3, Percent, ArrowRight, TrendingUp } from 'lucide-react';
 import {
   CartesianGrid,
@@ -34,6 +34,63 @@ type CurvePoint = {
   n: number;
   power: number;
 };
+
+type PowerSettings = {
+  activeTab: TabId;
+  alphaInput: string;
+  powerInput: string;
+  alternative: Alternative;
+  oneDeltaInput: string;
+  oneSigmaInput: string;
+  oneNInput: string;
+  twoDeltaInput: string;
+  twoSigmaInput: string;
+  allocationInput: string;
+  twoControlNInput: string;
+  groupsInput: string;
+  anovaEffectInput: string;
+  anovaTotalNInput: string;
+  propMode: 'one' | 'two';
+  propDirection: Direction;
+  p0Input: string;
+  p1Input: string;
+  p2Input: string;
+  propNInput: string;
+};
+
+const POWER_SETTINGS_KEY = 'sigmaStats_power_sample_size_settings';
+const defaultPowerSettings: PowerSettings = {
+  activeTab: 'one-sample',
+  alphaInput: '0.05',
+  powerInput: '0.90',
+  alternative: 'two-sided',
+  oneDeltaInput: '1',
+  oneSigmaInput: '2',
+  oneNInput: '',
+  twoDeltaInput: '1',
+  twoSigmaInput: '2',
+  allocationInput: '1',
+  twoControlNInput: '',
+  groupsInput: '3',
+  anovaEffectInput: '0.25',
+  anovaTotalNInput: '',
+  propMode: 'one',
+  propDirection: 'increase',
+  p0Input: '0.10',
+  p1Input: '0.15',
+  p2Input: '0.20',
+  propNInput: ''
+};
+
+function loadPowerSettings(): PowerSettings {
+  if (typeof window === 'undefined') return defaultPowerSettings;
+  try {
+    const saved = window.localStorage.getItem(POWER_SETTINGS_KEY);
+    return saved ? { ...defaultPowerSettings, ...JSON.parse(saved) } : defaultPowerSettings;
+  } catch {
+    return defaultPowerSettings;
+  }
+}
 
 const tabs: { id: TabId, label: string, icon: React.ElementType }[] = [
   { id: 'one-sample', label: 'One Sample', icon: Sigma },
@@ -535,30 +592,79 @@ function invalidResult(note: string): Result {
 }
 
 export default function PowerSampleSizeModule() {
-  const [activeTab, setActiveTab] = useState<TabId>('one-sample');
-  const [alphaInput, setAlphaInput] = useState('0.05');
-  const [powerInput, setPowerInput] = useState('0.90');
-  const [alternative, setAlternative] = useState<Alternative>('two-sided');
+  const savedSettings = useMemo(() => loadPowerSettings(), []);
+  const [activeTab, setActiveTab] = useState<TabId>(savedSettings.activeTab);
+  const [alphaInput, setAlphaInput] = useState(savedSettings.alphaInput);
+  const [powerInput, setPowerInput] = useState(savedSettings.powerInput);
+  const [alternative, setAlternative] = useState<Alternative>(savedSettings.alternative);
 
-  const [oneDeltaInput, setOneDeltaInput] = useState('1');
-  const [oneSigmaInput, setOneSigmaInput] = useState('2');
-  const [oneNInput, setOneNInput] = useState('');
+  const [oneDeltaInput, setOneDeltaInput] = useState(savedSettings.oneDeltaInput);
+  const [oneSigmaInput, setOneSigmaInput] = useState(savedSettings.oneSigmaInput);
+  const [oneNInput, setOneNInput] = useState(savedSettings.oneNInput);
 
-  const [twoDeltaInput, setTwoDeltaInput] = useState('1');
-  const [twoSigmaInput, setTwoSigmaInput] = useState('2');
-  const [allocationInput, setAllocationInput] = useState('1');
-  const [twoControlNInput, setTwoControlNInput] = useState('');
+  const [twoDeltaInput, setTwoDeltaInput] = useState(savedSettings.twoDeltaInput);
+  const [twoSigmaInput, setTwoSigmaInput] = useState(savedSettings.twoSigmaInput);
+  const [allocationInput, setAllocationInput] = useState(savedSettings.allocationInput);
+  const [twoControlNInput, setTwoControlNInput] = useState(savedSettings.twoControlNInput);
 
-  const [groupsInput, setGroupsInput] = useState('3');
-  const [anovaEffectInput, setAnovaEffectInput] = useState('0.25');
-  const [anovaTotalNInput, setAnovaTotalNInput] = useState('');
+  const [groupsInput, setGroupsInput] = useState(savedSettings.groupsInput);
+  const [anovaEffectInput, setAnovaEffectInput] = useState(savedSettings.anovaEffectInput);
+  const [anovaTotalNInput, setAnovaTotalNInput] = useState(savedSettings.anovaTotalNInput);
 
-  const [propMode, setPropMode] = useState<'one' | 'two'>('one');
-  const [propDirection, setPropDirection] = useState<Direction>('increase');
-  const [p0Input, setP0Input] = useState('0.10');
-  const [p1Input, setP1Input] = useState('0.15');
-  const [p2Input, setP2Input] = useState('0.20');
-  const [propNInput, setPropNInput] = useState('');
+  const [propMode, setPropMode] = useState<'one' | 'two'>(savedSettings.propMode);
+  const [propDirection, setPropDirection] = useState<Direction>(savedSettings.propDirection);
+  const [p0Input, setP0Input] = useState(savedSettings.p0Input);
+  const [p1Input, setP1Input] = useState(savedSettings.p1Input);
+  const [p2Input, setP2Input] = useState(savedSettings.p2Input);
+  const [propNInput, setPropNInput] = useState(savedSettings.propNInput);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const settings: PowerSettings = {
+      activeTab,
+      alphaInput,
+      powerInput,
+      alternative,
+      oneDeltaInput,
+      oneSigmaInput,
+      oneNInput,
+      twoDeltaInput,
+      twoSigmaInput,
+      allocationInput,
+      twoControlNInput,
+      groupsInput,
+      anovaEffectInput,
+      anovaTotalNInput,
+      propMode,
+      propDirection,
+      p0Input,
+      p1Input,
+      p2Input,
+      propNInput
+    };
+    window.localStorage.setItem(POWER_SETTINGS_KEY, JSON.stringify(settings));
+  }, [
+    activeTab,
+    alphaInput,
+    powerInput,
+    alternative,
+    oneDeltaInput,
+    oneSigmaInput,
+    oneNInput,
+    twoDeltaInput,
+    twoSigmaInput,
+    allocationInput,
+    twoControlNInput,
+    groupsInput,
+    anovaEffectInput,
+    anovaTotalNInput,
+    propMode,
+    propDirection,
+    p0Input,
+    p1Input,
+    p2Input,
+    propNInput
+  ]);
 
   const alpha = clamp(parseOptional(alphaInput) ?? 0.05, 0.0001, 0.999);
   const power = parseOptional(powerInput);

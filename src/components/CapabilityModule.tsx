@@ -8,22 +8,60 @@ import {
   generateNormalCurve 
 } from '../lib/stats';
 
+type CapabilitySettings = {
+  selectedDataId: string;
+  usl: number | '';
+  lsl: number | '';
+  target: number | '';
+  isLslBoundary: boolean;
+  isUslBoundary: boolean;
+  subgroupType: 'fixed' | 'variable';
+  fixedSubgroupSize: number;
+  subgroupIdColumn: string;
+  analysisIntent: 'overall' | 'shortTerm' | 'both';
+};
+
+const CAPABILITY_SETTINGS_KEY = 'sigmaStats_capability_settings';
+const defaultCapabilitySettings: CapabilitySettings = {
+  selectedDataId: '',
+  usl: '',
+  lsl: '',
+  target: '',
+  isLslBoundary: false,
+  isUslBoundary: false,
+  subgroupType: 'fixed',
+  fixedSubgroupSize: 1,
+  subgroupIdColumn: '',
+  analysisIntent: 'shortTerm'
+};
+
+function loadCapabilitySettings(): CapabilitySettings {
+  if (typeof window === 'undefined') return defaultCapabilitySettings;
+  try {
+    const saved = window.localStorage.getItem(CAPABILITY_SETTINGS_KEY);
+    return saved ? { ...defaultCapabilitySettings, ...JSON.parse(saved) } : defaultCapabilitySettings;
+  } catch {
+    return defaultCapabilitySettings;
+  }
+}
+
 export default function CapabilityModule({ datasets }: { datasets: any[] }) {
+  const savedSettings = useMemo(() => loadCapabilitySettings(), []);
   // --- State Configuration ---
-  const [selectedDataId, setSelectedDataId] = useState<string>('');
-  const [usl, setUsl] = useState<number | ''>('');
-  const [lsl, setLsl] = useState<number | ''>('');
-  const [target, setTarget] = useState<number | ''>('');
+  const [selectedDataId, setSelectedDataId] = useState<string>(savedSettings.selectedDataId);
+  const [usl, setUsl] = useState<number | ''>(savedSettings.usl);
+  const [lsl, setLsl] = useState<number | ''>(savedSettings.lsl);
+  const [target, setTarget] = useState<number | ''>(savedSettings.target);
   
   // Boundary toggles
-  const [isLslBoundary, setIsLslBoundary] = useState(false);
-  const [isUslBoundary, setIsUslBoundary] = useState(false);
+  const [isLslBoundary, setIsLslBoundary] = useState(savedSettings.isLslBoundary);
+  const [isUslBoundary, setIsUslBoundary] = useState(savedSettings.isUslBoundary);
 
   // Subgroup configuration
-  const [subgroupType, setSubgroupType] = useState<'fixed' | 'variable'>('fixed');
-  const [fixedSubgroupSize, setFixedSubgroupSize] = useState<number>(1);
-  const [subgroupIdColumn, setSubgroupIdColumn] = useState<string>('');
-  const [analysisIntent, setAnalysisIntent] = useState<'overall' | 'shortTerm' | 'both'>('shortTerm');
+  const [subgroupType, setSubgroupType] = useState<'fixed' | 'variable'>(savedSettings.subgroupType);
+  const [fixedSubgroupSize, setFixedSubgroupSize] = useState<number>(savedSettings.fixedSubgroupSize);
+  const [subgroupIdColumn, setSubgroupIdColumn] = useState<string>(savedSettings.subgroupIdColumn);
+  const [analysisIntent, setAnalysisIntent] = useState<'overall' | 'shortTerm' | 'both'>(savedSettings.analysisIntent);
 
   // --- Derived Data & Calculations ---
   const activeDataset = datasets.find(d => d.id === selectedDataId);
@@ -33,14 +71,31 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
       .filter((value: number) => Number.isFinite(value)),
     [activeDataset]
   );
+  const hasSpecLimit = usl !== '' || lsl !== '';
 
   // Default subgroup size to total on data selection
   React.useEffect(() => {
     if (rawData.length > 0) {
-      setFixedSubgroupSize(rawData.length);
-      setAnalysisIntent('shortTerm');
+      setFixedSubgroupSize(current => current > 0 ? current : rawData.length);
     }
   }, [selectedDataId, rawData.length]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const settings: CapabilitySettings = {
+      selectedDataId,
+      usl,
+      lsl,
+      target,
+      isLslBoundary,
+      isUslBoundary,
+      subgroupType,
+      fixedSubgroupSize,
+      subgroupIdColumn,
+      analysisIntent
+    };
+    window.localStorage.setItem(CAPABILITY_SETTINGS_KEY, JSON.stringify(settings));
+  }, [selectedDataId, usl, lsl, target, isLslBoundary, isUslBoundary, subgroupType, fixedSubgroupSize, subgroupIdColumn, analysisIntent]);
 
   // Auto-switch to Comprehensive if rational subgroups are detected
   React.useEffect(() => {
@@ -244,24 +299,31 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           {/* Diagnostics Banner */}
           {results && (
             <ExportWrapper fileName="capability-diagnostics">
-              <div className={`p-4 rounded-lg border flex gap-4 ${results.isNormal && results.isStable ? 'bg-slate-800 border-green-500/30' : 'bg-orange-900/20 border-orange-500/50'}`}>
-                <div>
-                  <span className={`text-sm font-bold ${results.normalityInconclusive ? 'text-slate-400' : (results.isNormal ? 'text-green-400' : 'text-orange-400')}`}>
-                    {results.normalityInconclusive 
-                      ? 'ℹ Normality Inconclusive (Sample < 5)' 
-                      : (results.isNormal ? '✓ Normal Distribution' : '⚠ Non-Normal (Using ISO Percentile Method)')}
-                  </span>
-                  {!results.normalityInconclusive && (
-                    <span className="text-xs text-slate-400 ml-2">
-                      (P-Value: {typeof results.normalityPValue === 'number' ? results.normalityPValue.toFixed(3) : '--'})
+              <div className={`p-4 rounded-lg border ${results.isNormal && results.isStable ? 'bg-slate-800 border-green-500/30' : 'bg-orange-900/20 border-orange-500/50'}`}>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  <div>
+                    <span className={`text-sm font-bold ${results.normalityInconclusive ? 'text-slate-400' : (results.isNormal ? 'text-green-400' : 'text-orange-400')}`}>
+                      {results.normalityInconclusive 
+                        ? 'Normality Inconclusive (Sample < 5)' 
+                        : (results.isNormal ? 'Normal Distribution' : 'Non-Normal (ISO Percentile Method)')}
                     </span>
-                  )}
+                    {!results.normalityInconclusive && (
+                      <span className="text-xs text-slate-400 ml-2">
+                        (P-Value: {typeof results.normalityPValue === 'number' ? results.normalityPValue.toFixed(3) : '--'})
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span className={`text-sm font-bold ${results.isStable ? 'text-green-400' : 'text-orange-400'}`}>
+                      {results.isStable ? 'Process Stable' : 'Process Out of Control (Check I-MR)'}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className={`text-sm font-bold ${results.isStable ? 'text-green-400' : 'text-orange-400'}`}>
-                    {results.isStable ? '✓ Process Stable' : '⚠ Process Out of Control (Check I-MR)'}
-                  </span>
-                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-400">
+                  {results.isNormal
+                    ? 'Capability uses the normal model; Cp/Cpk use within sigma and Pp/Ppk use overall sigma.'
+                    : 'Capability uses percentile spread because the selected data are non-normal; Pp/Ppk and Cp/Cpk are percentile-based, and PPM uses observed counts.'}
+                </p>
               </div>
             </ExportWrapper>
           )}
@@ -269,19 +331,24 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           {/* Results Grid */}
           {results && (
             <ExportWrapper fileName="capability-indices">
+              {!hasSpecLimit && (
+                <div className="mb-3 rounded border border-sky-500/30 bg-sky-950/30 px-4 py-3 text-sm text-sky-100">
+                  Enter at least one spec limit to calculate capability indices. The distribution chart can still be reviewed without specs.
+                </div>
+              )}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {analysisIntent !== 'overall' && (
                   <>
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Cp (Potential ST)</div>
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">{results.isNormal ? 'Cp (Potential ST)' : 'Cp (Percentile ST)'}</div>
                       <div className="text-2xl sm:text-3xl font-mono text-white mt-2 truncate tabular-nums">
-                        {typeof results.Cp === 'number' ? results.Cp.toFixed(2) : 'N/A'}
+                        {hasSpecLimit && typeof results.Cp === 'number' ? results.Cp.toFixed(2) : 'Add spec'}
                       </div>
                     </div>
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Cpk (Within ST)</div>
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">{results.isNormal ? 'Cpk (Within ST)' : 'Cpk (Percentile ST)'}</div>
                       <div className="text-2xl sm:text-3xl font-mono text-yellow-400 mt-2 truncate tabular-nums">
-                        {typeof results.Cpk === 'number' ? results.Cpk.toFixed(2) : 'N/A'}
+                        {hasSpecLimit && typeof results.Cpk === 'number' ? results.Cpk.toFixed(2) : 'Add spec'}
                       </div>
                     </div>
                   </>
@@ -289,15 +356,15 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
                 {analysisIntent !== 'shortTerm' && (
                   <>
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Pp (Potential LT)</div>
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">{results.isNormal ? 'Pp (Potential LT)' : 'Pp (Percentile LT)'}</div>
                       <div className="text-2xl sm:text-3xl font-mono text-white mt-2 truncate tabular-nums">
-                        {typeof results.Pp === 'number' ? results.Pp.toFixed(2) : 'N/A'}
+                        {hasSpecLimit && typeof results.Pp === 'number' ? results.Pp.toFixed(2) : 'Add spec'}
                       </div>
                     </div>
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col h-full">
-                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">Ppk (Overall Actual LT)</div>
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-auto min-h-[2.5rem] flex items-center">{results.isNormal ? 'Ppk (Overall Actual LT)' : 'Ppk (Percentile Actual LT)'}</div>
                       <div className="text-2xl sm:text-3xl font-mono text-cyan-400 mt-2 truncate tabular-nums">
-                        {typeof results.Ppk === 'number' ? results.Ppk.toFixed(2) : 'N/A'}
+                        {hasSpecLimit && typeof results.Ppk === 'number' ? results.Ppk.toFixed(2) : 'Add spec'}
                       </div>
                     </div>
                   </>
