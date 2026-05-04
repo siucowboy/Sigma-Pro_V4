@@ -179,7 +179,7 @@ export default function HypothesisModule({ datasets }: { datasets: any[] }) {
     if (data.length < 2) return null;
     
     const norm = calculateAndersonDarling(data);
-    const isNormal = norm.pValue > 0.05;
+    const isNormal = norm.pValue > alpha;
     const n = data.length;
     
     let res;

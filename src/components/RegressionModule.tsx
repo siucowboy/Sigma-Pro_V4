@@ -625,7 +625,7 @@ export default function RegressionModule({ datasets }: { datasets: any[] }) {
                         <XAxis dataKey="residualValue" type="number" domain={['auto', 'auto']} stroke="#475569" label={{ value: 'Residual', position: 'insideBottom', offset: -5, fontSize: 10, fill: '#475569' }} tickFormatter={(v) => v.toFixed(2)} />
                         <YAxis stroke="#475569" label={{ value: 'Frequency', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#475569' }} />
                         <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '10px' }} />
-                        <Bar dataKey="frequency" fill="#fbbf24" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="frequency" fill="#fbbf24" barSize={40} radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

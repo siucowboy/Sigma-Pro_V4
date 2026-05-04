@@ -84,9 +84,9 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
 
   // Generate Chart Data (Dynamic Bins + PDF Curve)
   const chartData = useMemo(() => {
-    if (!results || !rawData.length) return { histogram: [], curve: [] };
+    if (!results || !rawData.length) return { histogram: [], curve: [], domain: [0, 100], barSize: 40 };
     
-    // Dynamic binning (Sturges rule applied inside stats.ts)
+    // Dynamic binning
     const histData = generateDynamicHistogram(rawData); 
     
     // Smooth PDF curve (only if normal)
@@ -94,8 +94,45 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
       ? generateNormalCurve(results.mean, results.stdevOverall, histData)
       : [];
 
-    return { histogram: histData, curve: curveData };
-  }, [results, rawData]);
+    const xMin = histData.length > 0 ? histData[0].min : 0;
+    const xMax = histData.length > 0 ? histData[histData.length - 1].max : 0;
+    const specBounds = [
+      usl !== '' ? Number(usl) : null,
+      lsl !== '' ? Number(lsl) : null,
+      target !== '' ? Number(target) : null
+    ].filter(v => v !== null) as number[];
+
+    const finalMin = Math.min(xMin, ...specBounds);
+    const finalMax = Math.max(xMax, ...specBounds);
+    const padding = (finalMax - finalMin) * 0.1 || 1;
+    const sharedDomain = [finalMin - padding, finalMax + padding];
+
+    const binWidth = histData.length > 0 ? (histData[0].max - histData[0].min) : 1;
+    const domainWidth = (sharedDomain[1] - sharedDomain[0]) || 1;
+    
+    // For numeric axis, Recharts Bar needs barSize in pixels.
+    // We'll use a safer estimation that adapts to the number of bins.
+    const barSize = Math.max(15, (binWidth / domainWidth) * 700);
+
+    // Merge for stability on numeric axis
+    const merged = [
+      ...histData.map(h => ({ x: h.x, count: h.count })),
+      ...curveData.map(c => ({ x: c.x, curveY: c.y }))
+    ].sort((a, b) => a.x - b.x);
+
+    return { merged, domain: sharedDomain, barSize };
+  }, [results, rawData, usl, lsl, target]);
+
+  const formatAxisValue = (val: any) => {
+    if (typeof val !== 'number') return val;
+    if (val === 0) return '0';
+    const absVal = Math.abs(val);
+    if (absVal < 0.0001 || absVal >= 10000) {
+      return val.toExponential(4);
+    }
+    // Limit to 4 decimal places, removing unnecessary trailing zeros
+    return parseFloat(val.toFixed(4)).toString();
+  };
 
   // --- UI Render ---
   return (
@@ -225,10 +262,16 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
             <ExportWrapper fileName="capability-diagnostics">
               <div className={`p-4 rounded-lg border flex gap-4 ${results.isNormal && results.isStable ? 'bg-slate-800 border-green-500/30' : 'bg-orange-900/20 border-orange-500/50'}`}>
                 <div>
-                  <span className={`text-sm font-bold ${results.isNormal ? 'text-green-400' : 'text-orange-400'}`}>
-                    {results.isNormal ? '✓ Normal Distribution' : '⚠ Non-Normal (Using ISO Percentile Method)'}
+                  <span className={`text-sm font-bold ${results.normalityInconclusive ? 'text-slate-400' : (results.isNormal ? 'text-green-400' : 'text-orange-400')}`}>
+                    {results.normalityInconclusive 
+                      ? 'ℹ Normality Inconclusive (Sample < 5)' 
+                      : (results.isNormal ? '✓ Normal Distribution' : '⚠ Non-Normal (Using ISO Percentile Method)')}
                   </span>
-                  <span className="text-xs text-slate-400 ml-2">(P-Value: {typeof results.normalityPValue === 'number' ? results.normalityPValue.toFixed(3) : '--'})</span>
+                  {!results.normalityInconclusive && (
+                    <span className="text-xs text-slate-400 ml-2">
+                      (P-Value: {typeof results.normalityPValue === 'number' ? results.normalityPValue.toFixed(3) : '--'})
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className={`text-sm font-bold ${results.isStable ? 'text-green-400' : 'text-orange-400'}`}>
@@ -275,29 +318,50 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           <ExportWrapper fileName="capability-histogram">
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 h-[400px]">
                {rawData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%">
-                   <ComposedChart data={chartData.histogram} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
-                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                     
-                     <XAxis dataKey="x" type="number" domain={['auto', 'auto']} tick={{fill: '#94a3b8', fontSize: 12}} />
-                     <YAxis yAxisId="left" tick={{fill: '#94a3b8', fontSize: 12}} />
-                     
-                     <Tooltip 
-                       contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }}
-                       itemStyle={{ color: '#e2e8f0' }}
-                     />
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData.merged} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                      
+                      <XAxis 
+                        dataKey="x" 
+                        type="number" 
+                        domain={chartData.domain as [number, number]} 
+                        tick={{fill: '#94a3b8', fontSize: 12}}
+                        tickFormatter={formatAxisValue}
+                      />
+                      <YAxis tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={formatAxisValue} />
+                      
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }}
+                        itemStyle={{ color: '#e2e8f0' }}
+                        labelFormatter={formatAxisValue}
+                      />
+ 
+                      <Bar 
+                        dataKey="count" 
+                        fill="#64748b" 
+                        barSize={chartData.barSize} 
+                        opacity={0.8} 
+                        isAnimationActive={false} 
+                      />
 
-                     <Bar yAxisId="left" dataKey="count" fill="#475569" barSize={40} />
+                      {results?.isNormal && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="curveY" 
+                          stroke="#38bdf8" 
+                          strokeWidth={3} 
+                          dot={false} 
+                          isAnimationActive={false} 
+                          connectNulls={true}
+                        />
+                      )}
 
-                     {results?.isNormal && (
-                       <Line yAxisId="left" data={chartData.curve} type="monotone" dataKey="y" stroke="#38bdf8" strokeWidth={3} dot={false} isAnimationActive={false} />
-                     )}
-
-                     {lsl !== '' && <ReferenceLine yAxisId="left" x={Number(lsl)} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'LSL', fill: '#ef4444', fontSize: 12 }} />}
-                     {usl !== '' && <ReferenceLine yAxisId="left" x={Number(usl)} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'USL', fill: '#ef4444', fontSize: 12 }} />}
-                     {target !== '' && <ReferenceLine yAxisId="left" x={Number(target)} stroke="#22c55e" label={{ position: 'top', value: 'Target', fill: '#22c55e', fontSize: 12 }} />}
-                   </ComposedChart>
-                 </ResponsiveContainer>
+                     {lsl !== '' && <ReferenceLine x={Number(lsl)} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'LSL', fill: '#ef4444', fontSize: 12 }} />}
+                     {usl !== '' && <ReferenceLine x={Number(usl)} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'USL', fill: '#ef4444', fontSize: 12 }} />}
+                     {target !== '' && <ReferenceLine x={Number(target)} stroke="#22c55e" label={{ position: 'top', value: 'Target', fill: '#22c55e', fontSize: 12 }} />}
+                    </ComposedChart>
+                  </ResponsiveContainer>
                ) : (
                  <div className="flex items-center justify-center h-full text-slate-500">Select a dataset to view distribution</div>
                )}

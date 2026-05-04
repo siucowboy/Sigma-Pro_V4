@@ -123,7 +123,9 @@ export function analyzeCapability(params: any) {
   const overallPpmTotal = overallPpmLsl + overallPpmUsl;
 
   return {
-    mean, stdevOverall, stdevWithin, isNormal, normalityPValue: adTestResult.pValue,
+    mean, stdevOverall, stdevWithin, isNormal, 
+    normalityPValue: adTestResult.pValue,
+    normalityInconclusive: adTestResult.inconclusive,
     isStable, Cp, Cpk, Pp, Ppk,
     zBenchWithin: expectedPpmTotal > 0 && expectedPpmTotal < 1000000 ? -jStat.normal.inv(expectedPpmTotal / 1000000, 0, 1) : 6,
     zBenchOverall: overallPpmTotal > 0 && overallPpmTotal < 1000000 ? -jStat.normal.inv(overallPpmTotal / 1000000, 0, 1) : 6,
@@ -516,22 +518,33 @@ export function runANOVA(groups: number[][]) {
 
 export function calculateAndersonDarling(data: number[]) {
   const n = data.length;
-  if (n < 7) return { pValue: 1, statistic: 0, inconclusive: true };
-  const mean = getMean(data), stdev = getStdDev(data), sorted = [...data].sort((a, b) => a - b);
+  // AD test is valid for n >= 5. 
+  if (n < 5) return { pValue: 1, statistic: 0, inconclusive: true };
+  const mean = getMean(data);
+  const stdev = getStdDev(data);
+  const sorted = [...data].sort((a, b) => a - b);
   if (stdev === 0) return { pValue: 1, statistic: 0, inconclusive: true };
   let S = 0;
   for (let i = 0; i < n; i++) {
-    const f = Math.max(Math.min(jStat.normal.cdf(sorted[i], mean, stdev), 0.999), 0.001);
-    const rf = Math.max(Math.min(jStat.normal.cdf(sorted[n - 1 - i], mean, stdev), 0.999), 0.001);
+    const f = Math.max(Math.min(jStat.normal.cdf(sorted[i], mean, stdev), 1 - 1e-10), 1e-10);
+    const rf = Math.max(Math.min(jStat.normal.cdf(sorted[n - 1 - i], mean, stdev), 1 - 1e-10), 1e-10);
     S += ((2 * (i + 1) - 1) / n) * (Math.log(f) + Math.log(1 - rf));
   }
   const A2 = -n - S;
   const A2adj = A2 * (1 + 0.75 / n + 2.25 / Math.pow(n, 2));
   let p = 0;
-  if (A2adj >= 0.6) p = Math.exp(1.2937 - 5.709 * A2adj);
-  else if (A2adj >= 0.34) p = Math.exp(0.9177 - 4.279 * A2adj);
-  else p = 1 - Math.exp(-13.436 + 101.14 * A2adj);
-  return { statistic: A2adj, pValue: p };
+  if (A2adj >= 0.60) {
+    p = Math.exp(1.2937 - 5.709 * A2adj + 0.0186 * Math.pow(A2adj, 2));
+  } else if (A2adj > 0.34) {
+    p = Math.exp(0.9177 - 4.279 * A2adj - 1.38 * Math.pow(A2adj, 2));
+  } else if (A2adj > 0.20) {
+    p = 1 - Math.exp(-8.318 + 42.796 * A2adj - 59.938 * Math.pow(A2adj, 2));
+  } else {
+    p = 1 - Math.exp(-13.436 + 101.14 * A2adj - 223.73 * Math.pow(A2adj, 2));
+  }
+
+
+  return { statistic: A2adj, pValue: Math.min(1, Math.max(0, p)) };
 }
 
 export function run1SampleVarianceTest(data: number[], targetVar: number, alternative: string = 'neq') {

@@ -1,10 +1,6 @@
 {
   "name": "SigmaStats Pro",
   "description": "Professional statistical analysis toolkit for Lean Six Sigma, featuring Process Capability, Hypothesis Testing, Regression, DOE, and Control Charts.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
-  ],
+  "requestFramePermissions": [],
   "majorCapabilities": []
 }
