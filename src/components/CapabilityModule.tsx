@@ -130,6 +130,30 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
     return analyzeCapability(analysisParams);
   }, [rawData, usl, lsl, target, isLslBoundary, isUslBoundary, subgroupType, fixedSubgroupSize, subgroupIdColumn]);
 
+  const dataStats = useMemo(() => {
+    if (!rawData.length) return null;
+    const sorted = [...rawData].sort((a, b) => a - b);
+    const n = sorted.length;
+    const mean = sorted.reduce((sum, value) => sum + value, 0) / n;
+    const median = n % 2 === 0
+      ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+      : sorted[Math.floor(n / 2)];
+    const sampleVariance = n > 1
+      ? sorted.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / (n - 1)
+      : 0;
+    const populationVariance = sorted.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / n;
+
+    return {
+      n,
+      mean,
+      median,
+      sampleSd: Math.sqrt(sampleVariance),
+      populationSd: Math.sqrt(populationVariance),
+      min: sorted[0],
+      max: sorted[n - 1]
+    };
+  }, [rawData]);
+
   // Generate Chart Data (Dynamic Bins + PDF Curve)
   const chartData = useMemo(() => {
     if (!results || !rawData.length) return { histogram: [], curve: [], domain: [0, 100], yMax: 10 };
@@ -228,11 +252,11 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
             
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Upper Spec Limit (USL)</label>
+                <label className="block text-xs text-slate-400 mb-1">Lower Spec Limit (LSL)</label>
                 <div className="flex gap-2">
-                  <input type="number" value={usl} onChange={e => setUsl(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm" />
+                  <input type="number" value={lsl} onChange={e => setLsl(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm" />
                   <label className="flex items-center text-xs text-slate-400 cursor-pointer">
-                    <input type="checkbox" checked={isUslBoundary} onChange={e => setIsUslBoundary(e.target.checked)} className="mr-1" />
+                    <input type="checkbox" checked={isLslBoundary} onChange={e => setIsLslBoundary(e.target.checked)} className="mr-1" />
                     Boundary
                   </label>
                 </div>
@@ -244,11 +268,11 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Lower Spec Limit (LSL)</label>
+                <label className="block text-xs text-slate-400 mb-1">Upper Spec Limit (USL)</label>
                 <div className="flex gap-2">
-                  <input type="number" value={lsl} onChange={e => setLsl(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm" />
+                  <input type="number" value={usl} onChange={e => setUsl(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm" />
                   <label className="flex items-center text-xs text-slate-400 cursor-pointer">
-                    <input type="checkbox" checked={isLslBoundary} onChange={e => setIsLslBoundary(e.target.checked)} className="mr-1" />
+                    <input type="checkbox" checked={isUslBoundary} onChange={e => setIsUslBoundary(e.target.checked)} className="mr-1" />
                     Boundary
                   </label>
                 </div>
@@ -373,6 +397,32 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
             </ExportWrapper>
           )}
 
+          {results && dataStats && (
+            <ExportWrapper fileName="capability-data-summary">
+              <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <div className="text-xs text-slate-400 uppercase tracking-wider font-bold mb-3">Data Summary</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-x-6 gap-y-3">
+                  <StatLine
+                    label={results.isNormal ? 'Mean' : 'Median'}
+                    value={formatAxisValue(results.isNormal ? dataStats.mean : dataStats.median)}
+                    emphasis
+                  />
+                  <StatLine
+                    label={results.isNormal ? 'Std Dev (Within)' : 'Std Dev (Sample)'}
+                    value={formatAxisValue(results.isNormal ? results.stdevWithin : dataStats.sampleSd)}
+                  />
+                  <StatLine
+                    label={results.isNormal ? 'Std Dev (Overall)' : 'Std Dev (Population)'}
+                    value={formatAxisValue(results.isNormal ? results.stdevOverall : dataStats.populationSd)}
+                  />
+                  <StatLine label="Min" value={formatAxisValue(dataStats.min)} />
+                  <StatLine label="Max" value={formatAxisValue(dataStats.max)} />
+                  <StatLine label="N" value={dataStats.n.toString()} />
+                </div>
+              </div>
+            </ExportWrapper>
+          )}
+
           {/* Chart Area */}
           <ExportWrapper fileName="capability-histogram">
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 h-[400px]">
@@ -424,6 +474,17 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
           )}
 
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StatLine({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate">{label}</div>
+      <div className={`font-mono tabular-nums truncate ${emphasis ? 'text-lg text-white' : 'text-sm text-slate-200'}`}>
+        {value}
       </div>
     </div>
   );
