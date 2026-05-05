@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Plus, Trash2, RefreshCw, Layers, Grid, BarChart2, 
-  Layout, Settings2, Info, ArrowRightLeft, Percent, Eye, EyeOff
+  Layout, Settings2, Info, ArrowRightLeft, Percent, Eye, EyeOff, Download, Upload
 } from 'lucide-react';
 import * as jStatModule from 'jstat';
 const jStat: any = (jStatModule as any).default?.jStat || (jStatModule as any).jStat || (jStatModule as any).default || jStatModule;
@@ -13,6 +13,7 @@ import ExportWrapper from './ExportWrapper';
 import { generateFactorialDesign, analyzeDOE, getMean, getUncodedCoefficients } from '../lib/stats';
 
 export default function DOEModule({ datasets }: { datasets: any[] }) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   // --- State ---
   const [factors, setFactors] = useState([
     { id: 1, name: 'A', low: -1, high: 1 },
@@ -27,6 +28,7 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
   const [displayUnits, setDisplayUnits] = useState<'coded' | 'uncoded'>('coded');
   const [activeTab, setActiveTab] = useState<'design' | 'analysis' | 'plots' | 'residuals'>('design');
   const [visibleMainEffects, setVisibleMainEffects] = useState<string[]>([]);
+  const [factorValueDrafts, setFactorValueDrafts] = useState<Record<string, string>>({});
 
   // Helper to generate all terms
   const getAllPossibleTerms = (factorNames: string[]) => {
@@ -202,6 +204,41 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
   const removeFactor = (id: number) => {
     if (factors.length <= 2) return;
     setFactors(factors.filter(f => f.id !== id));
+    setFactorValueDrafts(prev => {
+      const next = { ...prev };
+      delete next[`${id}-low`];
+      delete next[`${id}-high`];
+      return next;
+    });
+  };
+
+  const updateFactorLimit = (index: number, field: 'low' | 'high', value: string) => {
+    const draftKey = `${factors[index].id}-${field}`;
+    setFactorValueDrafts(prev => ({ ...prev, [draftKey]: value }));
+
+    if (value === '' || value === '-' || value === '.' || value === '-.') return;
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+
+    const newFactors = [...factors];
+    newFactors[index][field] = parsed;
+    setFactors(newFactors);
+  };
+
+  const commitFactorLimit = (index: number, field: 'low' | 'high') => {
+    const draftKey = `${factors[index].id}-${field}`;
+    setFactorValueDrafts(prev => {
+      const next = { ...prev };
+      const parsed = Number(next[draftKey]);
+      if (Number.isFinite(parsed)) {
+        const newFactors = [...factors];
+        newFactors[index][field] = parsed;
+        setFactors(newFactors);
+      }
+      delete next[draftKey];
+      return next;
+    });
   };
 
   const toggleTerm = (term: string) => {
@@ -219,6 +256,86 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
     });
   };
 
+  const exportDesign = () => {
+    const payload = {
+      schemaVersion: 1,
+      type: 'sigma-stats-doe-design',
+      name: `DOE Design ${new Date().toLocaleDateString()}`,
+      createdAt: new Date().toISOString(),
+      settings: {
+        factors,
+        replicates,
+        blocks,
+        responseId,
+        alpha,
+        isRandomOrder,
+        displayCoded,
+        displayUnits,
+        selectedTerms,
+        visibleMainEffects
+      },
+      design: {
+        runs: designMatrix
+      },
+      analysis: {
+        responseColumn: responseDataset?.name || null,
+        selectedTerms
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sigma-stats-doe-design-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importDesign = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      if (payload?.type !== 'sigma-stats-doe-design' || payload?.schemaVersion !== 1) {
+        window.alert('This does not look like a SigmaStats DOE design JSON file.');
+        return;
+      }
+
+      const settings = payload.settings || {};
+      if (!Array.isArray(settings.factors) || settings.factors.length < 2) {
+        window.alert('The DOE design file is missing factor settings.');
+        return;
+      }
+
+      setFactors(settings.factors.map((factor: any, index: number) => ({
+        id: Number(factor.id) || Date.now() + index,
+        name: String(factor.name || String.fromCharCode(65 + index)).toUpperCase().slice(0, 20),
+        low: Number.isFinite(Number(factor.low)) ? Number(factor.low) : -1,
+        high: Number.isFinite(Number(factor.high)) ? Number(factor.high) : 1
+      })));
+      setReplicates(Number(settings.replicates) || 1);
+      setBlocks(Number(settings.blocks) || 1);
+      setResponseId(typeof settings.responseId === 'string' ? settings.responseId : '');
+      setAlpha(Number(settings.alpha) || 0.05);
+      setIsRandomOrder(Boolean(settings.isRandomOrder));
+      setDisplayCoded(Boolean(settings.displayCoded));
+      setDisplayUnits(settings.displayUnits === 'uncoded' ? 'uncoded' : 'coded');
+      setSelectedTerms(Array.isArray(settings.selectedTerms) ? settings.selectedTerms.map(String) : []);
+      setVisibleMainEffects(Array.isArray(settings.visibleMainEffects) ? settings.visibleMainEffects.map(String) : []);
+      setActiveTab('design');
+    } catch (error) {
+      console.error('DOE import failed:', error);
+      window.alert('Unable to import that DOE design JSON file.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden">
       {/* Header */}
@@ -232,7 +349,31 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
             <p className="text-xs text-slate-500">Analyze interactions and optimize process response</p>
           </div>
         </div>
-        <div className="flex bg-slate-800 rounded-lg p-1">
+        <div className="flex items-center gap-3">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={importDesign}
+          />
+          <div className="flex bg-slate-800 rounded-lg p-1">
+            <button
+              onClick={exportDesign}
+              className="px-3 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 text-slate-300 hover:text-white hover:bg-slate-700"
+              title="Export DOE design JSON"
+            >
+              <Download className="w-4 h-4" /> Export
+            </button>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              className="px-3 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 text-slate-300 hover:text-white hover:bg-slate-700"
+              title="Import DOE design JSON"
+            >
+              <Upload className="w-4 h-4" /> Import
+            </button>
+          </div>
+          <div className="flex bg-slate-800 rounded-lg p-1">
           <button 
             onClick={() => setActiveTab('design')}
             className={`px-4 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'design' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
@@ -257,6 +398,7 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
           >
             <Percent className="w-4 h-4" /> Residuals
           </button>
+          </div>
         </div>
       </div>
 
@@ -325,12 +467,9 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                         <input 
                           type="number"
                           className="w-full bg-slate-900 text-xs p-1.5 rounded border border-slate-700" 
-                          value={f.low}
-                          onChange={e => {
-                            const newFactors = [...factors];
-                            newFactors[i].low = Number(e.target.value);
-                            setFactors(newFactors);
-                          }}
+                          value={factorValueDrafts[`${f.id}-low`] ?? f.low}
+                          onChange={e => updateFactorLimit(i, 'low', e.target.value)}
+                          onBlur={() => commitFactorLimit(i, 'low')}
                         />
                       </div>
                       <div className="flex-1">
@@ -338,12 +477,9 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                         <input 
                           type="number"
                           className="w-full bg-slate-900 text-xs p-1.5 rounded border border-slate-700" 
-                          value={f.high}
-                          onChange={e => {
-                            const newFactors = [...factors];
-                            newFactors[i].high = Number(e.target.value);
-                            setFactors(newFactors);
-                          }}
+                          value={factorValueDrafts[`${f.id}-high`] ?? f.high}
+                          onChange={e => updateFactorLimit(i, 'high', e.target.value)}
+                          onBlur={() => commitFactorLimit(i, 'high')}
                         />
                       </div>
                    </div>
