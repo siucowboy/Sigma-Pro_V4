@@ -339,6 +339,154 @@ export function getUncodedCoefficients(codedResults: any, factors: { name: strin
   });
 }
 
+export type DOEOptimizationGoal = 'maximize' | 'minimize' | 'target';
+
+export type DOEFactorBound = {
+  name: string;
+  low: number;
+  high: number;
+};
+
+export type DOEOptimizationResult = {
+  settings: Record<string, number>;
+  predicted: number;
+  objective: number;
+  absoluteError?: number;
+  percentError?: number | null;
+  method: 'grid' | 'coordinate';
+  approximate: boolean;
+  evaluations: number;
+};
+
+export function predictDOE(model: { coeffs?: any[] }, factorSettings: Record<string, number>) {
+  const coeffs = model?.coeffs || [];
+  return coeffs.reduce((total: number, coeff: any) => {
+    const term = coeff.name || coeff.term;
+    if (term === 'Constant') return total + Number(coeff.coeff || 0);
+    const termValue = String(term)
+      .split('*')
+      .reduce((product, factorName) => product * Number(factorSettings[factorName] ?? 0), 1);
+    return total + Number(coeff.coeff || 0) * termValue;
+  }, 0);
+}
+
+function isBetterDOEObjective(candidate: number, current: number, goal: DOEOptimizationGoal) {
+  if (goal === 'maximize') return candidate > current;
+  return candidate < current;
+}
+
+function scoreDOEObjective(predicted: number, goal: DOEOptimizationGoal, target?: number) {
+  if (goal === 'maximize') return predicted;
+  if (goal === 'minimize') return predicted;
+  return Math.abs(predicted - Number(target));
+}
+
+export function optimizeDOE(
+  model: { coeffs?: any[] },
+  factorBounds: DOEFactorBound[],
+  goal: DOEOptimizationGoal,
+  target?: number
+): DOEOptimizationResult | null {
+  if (!model?.coeffs?.length || !factorBounds.length) return null;
+  if (goal === 'target' && !Number.isFinite(Number(target))) return null;
+
+  const normalizedBounds = factorBounds.map(bound => ({
+    name: bound.name,
+    low: Math.min(Number(bound.low), Number(bound.high)),
+    high: Math.max(Number(bound.low), Number(bound.high))
+  }));
+
+  let bestSettings: Record<string, number> = {};
+  let bestPredicted = 0;
+  let bestObjective = goal === 'maximize' ? -Infinity : Infinity;
+  let evaluations = 0;
+
+  const evaluate = (settings: Record<string, number>) => {
+    const predicted = predictDOE(model, settings);
+    const objective = scoreDOEObjective(predicted, goal, target);
+    evaluations += 1;
+    if (!Number.isFinite(predicted)) return;
+    if (evaluations === 1 || isBetterDOEObjective(objective, bestObjective, goal)) {
+      bestSettings = { ...settings };
+      bestPredicted = predicted;
+      bestObjective = objective;
+    }
+  };
+
+  if (normalizedBounds.length <= 4) {
+    const levels = normalizedBounds.length <= 3 ? 101 : 21;
+    const current: Record<string, number> = {};
+    const visit = (index: number) => {
+      if (index === normalizedBounds.length) {
+        evaluate(current);
+        return;
+      }
+      const bound = normalizedBounds[index];
+      const step = (bound.high - bound.low) / (levels - 1);
+      for (let i = 0; i < levels; i++) {
+        current[bound.name] = bound.low + step * i;
+        visit(index + 1);
+      }
+    };
+    visit(0);
+    return {
+      settings: bestSettings,
+      predicted: bestPredicted,
+      objective: bestObjective,
+      absoluteError: goal === 'target' ? bestObjective : undefined,
+      percentError: goal === 'target' && target ? Math.abs(bestPredicted - target) / Math.abs(target) * 100 : null,
+      method: 'grid',
+      approximate: normalizedBounds.length === 4,
+      evaluations
+    };
+  }
+
+  const current = Object.fromEntries(normalizedBounds.map(bound => [bound.name, (bound.low + bound.high) / 2]));
+  evaluate(current);
+
+  for (let pass = 0; pass < 6; pass++) {
+    for (const bound of normalizedBounds) {
+      const span = (bound.high - bound.low) / Math.pow(2, pass);
+      const center = bestSettings[bound.name] ?? current[bound.name];
+      const low = Math.max(bound.low, center - span / 2);
+      const high = Math.min(bound.high, center + span / 2);
+      for (let i = 0; i <= 20; i++) {
+        const trial = { ...bestSettings };
+        trial[bound.name] = low + ((high - low) * i) / 20;
+        evaluate(trial);
+      }
+    }
+  }
+
+  return {
+    settings: bestSettings,
+    predicted: bestPredicted,
+    objective: bestObjective,
+    absoluteError: goal === 'target' ? bestObjective : undefined,
+    percentError: goal === 'target' && target ? Math.abs(bestPredicted - target) / Math.abs(target) * 100 : null,
+    method: 'coordinate',
+    approximate: true,
+    evaluations
+  };
+}
+
+export function validateDOEOptimizerSample() {
+  const model = {
+    coeffs: [
+      { name: 'Constant', coeff: 10 },
+      { name: 'A', coeff: 5 },
+      { name: 'B', coeff: -3 },
+      { name: 'A*B', coeff: 4 }
+    ]
+  };
+  const bounds = [{ name: 'A', low: -1, high: 1 }, { name: 'B', low: -1, high: 1 }];
+  return {
+    maximize: optimizeDOE(model, bounds, 'maximize'),
+    minimize: optimizeDOE(model, bounds, 'minimize'),
+    target: optimizeDOE(model, bounds, 'target', 10)
+  };
+}
+
 export function generateDynamicHistogram(data: number[]) {
   const n = data.length;
   if (n === 0) return [];

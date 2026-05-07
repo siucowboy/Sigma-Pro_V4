@@ -5,15 +5,19 @@ import {
 } from 'recharts';
 import { 
   Plus, Trash2, RefreshCw, Layers, Grid, BarChart2, 
-  Layout, Settings2, Info, ArrowRightLeft, Percent, Eye, EyeOff, Download, Upload
+  Layout, Settings2, Info, ArrowRightLeft, Percent, Eye, EyeOff, Download, Upload, Target
 } from 'lucide-react';
 import * as jStatModule from 'jstat';
 const jStat: any = (jStatModule as any).default?.jStat || (jStatModule as any).jStat || (jStatModule as any).default || jStatModule;
 import ExportWrapper from './ExportWrapper';
-import { generateFactorialDesign, analyzeDOE, getMean, getUncodedCoefficients } from '../lib/stats';
+import { generateFactorialDesign, analyzeDOE, getMean, getUncodedCoefficients, optimizeDOE, type DOEOptimizationGoal, type DOEOptimizationResult } from '../lib/stats';
 
 export default function DOEModule({ datasets }: { datasets: any[] }) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const fmt = (value: number, digits = 4) => Number.isFinite(value) ? value.toFixed(digits) : 'N/A';
+  const toActualValue = (coded: number, factor: { low: number; high: number }) => {
+    return Number(factor.low) + ((coded + 1) / 2) * (Number(factor.high) - Number(factor.low));
+  };
   // --- State ---
   const [factors, setFactors] = useState([
     { id: 1, name: 'A', low: -1, high: 1 },
@@ -26,9 +30,16 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
   const [isRandomOrder, setIsRandomOrder] = useState(false);
   const [displayCoded, setDisplayCoded] = useState(false);
   const [displayUnits, setDisplayUnits] = useState<'coded' | 'uncoded'>('coded');
-  const [activeTab, setActiveTab] = useState<'design' | 'analysis' | 'plots' | 'residuals'>('design');
+  const [activeTab, setActiveTab] = useState<'design' | 'analysis' | 'optimizer' | 'plots' | 'residuals'>('design');
   const [visibleMainEffects, setVisibleMainEffects] = useState<string[]>([]);
   const [factorValueDrafts, setFactorValueDrafts] = useState<Record<string, string>>({});
+  const [optimizerGoal, setOptimizerGoal] = useState<DOEOptimizationGoal>('maximize');
+  const [optimizerTarget, setOptimizerTarget] = useState('');
+  const [useDesignBounds, setUseDesignBounds] = useState(true);
+  const [optimizerDisplayUnits, setOptimizerDisplayUnits] = useState<'coded' | 'actual'>('actual');
+  const [optimizerBounds, setOptimizerBounds] = useState<Record<string, { low: number; high: number }>>({});
+  const [optimizerResult, setOptimizerResult] = useState<DOEOptimizationResult | null>(null);
+  const [optimizerMessage, setOptimizerMessage] = useState('');
 
   // Helper to generate all terms
   const getAllPossibleTerms = (factorNames: string[]) => {
@@ -53,6 +64,17 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
 
   useEffect(() => {
     setVisibleMainEffects(factors.map(f => f.name));
+  }, [factors]);
+
+  useEffect(() => {
+    setOptimizerBounds(prev => {
+      const next: Record<string, { low: number; high: number }> = {};
+      factors.forEach(factor => {
+        next[factor.name] = prev[factor.name] || { low: -1, high: 1 };
+      });
+      return next;
+    });
+    setOptimizerResult(null);
   }, [factors]);
 
   // Model Terms State (default to all available terms)
@@ -131,15 +153,20 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
       
       if (displayUnits === 'uncoded') {
         const uncodedCoeffs = getUncodedCoefficients(res, factors);
-        return { ...res, coeffs: uncodedCoeffs };
+        return { ...res, codedCoeffs: res.coeffs, coeffs: uncodedCoeffs };
       }
       
-      return { ...res };
+      return { ...res, codedCoeffs: res.coeffs };
     } catch (e) {
       console.error("DOE Analysis Error:", e);
       return null;
     }
   }, [canAnalyze, designMatrix, responseDataset, responseDataset?.values, selectedTerms, factors, displayUnits]);
+
+  const optimizerModel = useMemo(() => {
+    if (!analysisResults?.codedCoeffs?.length) return null;
+    return { coeffs: analysisResults.codedCoeffs };
+  }, [analysisResults]);
 
   // --- Plots Data ---
   const dataWithResponseMapped = useMemo(() => {
@@ -239,6 +266,50 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
       delete next[draftKey];
       return next;
     });
+  };
+
+  const updateOptimizerBound = (factorName: string, field: 'low' | 'high', value: string) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    setOptimizerBounds(prev => ({
+      ...prev,
+      [factorName]: {
+        ...(prev[factorName] || { low: -1, high: 1 }),
+        [field]: parsed
+      }
+    }));
+    setOptimizerResult(null);
+  };
+
+  const runOptimizer = () => {
+    setOptimizerMessage('');
+    if (!optimizerModel) {
+      setOptimizerResult(null);
+      setOptimizerMessage('Fit the DOE model by selecting a response column before running the optimizer.');
+      return;
+    }
+
+    const target = optimizerGoal === 'target' ? Number(optimizerTarget) : undefined;
+    if (optimizerGoal === 'target' && !Number.isFinite(target)) {
+      setOptimizerResult(null);
+      setOptimizerMessage('Enter a numeric target response before running target optimization.');
+      return;
+    }
+
+    const bounds = factors.map(factor => {
+      const configured = optimizerBounds[factor.name] || { low: -1, high: 1 };
+      return {
+        name: factor.name,
+        low: useDesignBounds ? -1 : configured.low,
+        high: useDesignBounds ? 1 : configured.high
+      };
+    });
+
+    const result = optimizeDOE(optimizerModel, bounds, optimizerGoal, target);
+    setOptimizerResult(result);
+    if (!result) {
+      setOptimizerMessage('The optimizer could not evaluate the current model and bounds.');
+    }
   };
 
   const toggleTerm = (term: string) => {
@@ -385,6 +456,12 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
             className={`px-4 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'analysis' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
           >
             <BarChart2 className="w-4 h-4" /> Analysis
+          </button>
+          <button 
+            onClick={() => setActiveTab('optimizer')}
+            className={`px-4 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            <Target className="w-4 h-4" /> Optimizer
           </button>
           <button 
             onClick={() => setActiveTab('plots')}
@@ -937,6 +1014,253 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                   </div>
                  </>
                )}
+            </div>
+          )}
+
+          {activeTab === 'optimizer' && (
+            <div className="space-y-6">
+              {(!canAnalyze || !analysisResults) ? (
+                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl h-80 flex flex-col items-center justify-center p-10 text-center">
+                  <div className="p-4 bg-slate-800 rounded-full mb-4">
+                    <Target className="w-8 h-8 text-slate-600" />
+                  </div>
+                  <h3 className="text-slate-300 font-bold mb-2">Response Optimizer Unavailable</h3>
+                  <p className="text-slate-500 text-sm max-w-sm">
+                    Select a response dataset and fit the DOE model before optimizing predicted response settings.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-sm text-amber-200 flex items-start gap-3">
+                    <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="font-bold text-amber-300 mb-1">Model-based planning warning</div>
+                      <p className="text-amber-100/80">
+                        The optimizer uses the fitted DOE prediction equation and is only valid inside the studied factor ranges. Keep bounds within the original factor ranges unless you intentionally want to explore outside the design space.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div className="xl:col-span-1 bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-5">
+                      <div>
+                        <h3 className="text-lg font-bold text-white">Response Optimizer</h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Optimizing {responseDataset?.name || 'selected response'} with the current {selectedTerms.length}-term model.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1 block">Optimization Goal</label>
+                        <select
+                          className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-white"
+                          value={optimizerGoal}
+                          onChange={e => {
+                            setOptimizerGoal(e.target.value as DOEOptimizationGoal);
+                            setOptimizerResult(null);
+                          }}
+                        >
+                          <option value="maximize">Maximize response</option>
+                          <option value="minimize">Minimize response</option>
+                          <option value="target">Target response</option>
+                        </select>
+                      </div>
+
+                      {optimizerGoal === 'target' && (
+                        <div>
+                          <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1 block">Target Response</label>
+                          <input
+                            type="number"
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white"
+                            value={optimizerTarget}
+                            onChange={e => {
+                              setOptimizerTarget(e.target.value);
+                              setOptimizerResult(null);
+                            }}
+                            placeholder="Enter target response"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1 block">Display Units</label>
+                        <div className="grid grid-cols-2 gap-2 bg-slate-800 rounded-lg p-1">
+                          <button
+                            type="button"
+                            onClick={() => setOptimizerDisplayUnits('actual')}
+                            className={`py-2 rounded-md text-xs font-bold transition-all ${optimizerDisplayUnits === 'actual' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                          >
+                            Actual
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOptimizerDisplayUnits('coded')}
+                            className={`py-2 rounded-md text-xs font-bold transition-all ${optimizerDisplayUnits === 'coded' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                          >
+                            Coded
+                          </button>
+                        </div>
+                      </div>
+
+                      <label className="flex items-center gap-3 bg-slate-800/60 border border-slate-700 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="accent-indigo-500"
+                          checked={useDesignBounds}
+                          onChange={e => {
+                            setUseDesignBounds(e.target.checked);
+                            setOptimizerResult(null);
+                          }}
+                        />
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-200">Use original DOE factor ranges</span>
+                          <span className="block text-[10px] text-slate-500">Recommended unless deliberately overriding the studied design space.</span>
+                        </span>
+                      </label>
+
+                      <button
+                        onClick={runOptimizer}
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm shadow-lg shadow-indigo-950/30 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Target className="w-4 h-4" /> Run Optimization
+                      </button>
+
+                      {optimizerMessage && (
+                        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                          {optimizerMessage}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="xl:col-span-2 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                      <div className="p-3 bg-slate-800/50 border-b border-slate-700">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Factor Bounds</h4>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-800/30 text-slate-500 uppercase tracking-widest text-[10px]">
+                            <tr>
+                              <th className="p-3">Factor</th>
+                              <th className="p-3 text-center">{optimizerDisplayUnits === 'coded' ? 'Coded Low' : 'Actual Low'}</th>
+                              <th className="p-3 text-center">{optimizerDisplayUnits === 'coded' ? 'Coded High' : 'Actual High'}</th>
+                              <th className="p-3 text-center">{optimizerDisplayUnits === 'coded' ? 'Actual Range' : 'Coded Range'}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {factors.map(factor => {
+                              const bounds = optimizerBounds[factor.name] || { low: -1, high: 1 };
+                              const low = useDesignBounds ? -1 : bounds.low;
+                              const high = useDesignBounds ? 1 : bounds.high;
+                              const actualLow = toActualValue(low, factor);
+                              const actualHigh = toActualValue(high, factor);
+                              return (
+                                <tr key={factor.id} className="border-b border-slate-800">
+                                  <td className="p-3 font-bold text-indigo-300">{factor.name}</td>
+                                  {optimizerDisplayUnits === 'coded' ? (
+                                    <>
+                                      <td className="p-3">
+                                        <input
+                                          type="number"
+                                          disabled={useDesignBounds}
+                                          className="w-full bg-slate-950 text-center text-xs p-2 rounded border border-slate-700 disabled:opacity-50"
+                                          value={low}
+                                          onChange={e => updateOptimizerBound(factor.name, 'low', e.target.value)}
+                                        />
+                                      </td>
+                                      <td className="p-3">
+                                        <input
+                                          type="number"
+                                          disabled={useDesignBounds}
+                                          className="w-full bg-slate-950 text-center text-xs p-2 rounded border border-slate-700 disabled:opacity-50"
+                                          value={high}
+                                          onChange={e => updateOptimizerBound(factor.name, 'high', e.target.value)}
+                                        />
+                                      </td>
+                                      <td className="p-3 text-center font-mono text-slate-300">{fmt(actualLow, 4)} to {fmt(actualHigh, 4)}</td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="p-3 text-center font-mono text-slate-300">{fmt(actualLow, 4)}</td>
+                                      <td className="p-3 text-center font-mono text-slate-300">{fmt(actualHigh, 4)}</td>
+                                      <td className="p-3 text-center font-mono text-slate-500">{fmt(low, 4)} to {fmt(high, 4)}</td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {optimizerResult && (
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                      <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
+                        <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Predicted Response</div>
+                        <div className="text-3xl font-mono text-cyan-400">{fmt(optimizerResult.predicted, 4)}</div>
+                        <p className="text-xs text-slate-500 mt-2">
+                          Objective: {optimizerGoal === 'target' ? `absolute error ${fmt(optimizerResult.absoluteError || 0, 4)}` : fmt(optimizerResult.objective, 4)}
+                        </p>
+                        {optimizerGoal === 'target' && optimizerResult.percentError !== null && optimizerResult.percentError !== undefined && (
+                          <p className="text-xs text-slate-500 mt-1">Percent error: {fmt(optimizerResult.percentError, 2)}%</p>
+                        )}
+                      </div>
+
+                      <div className="xl:col-span-2 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                        <div className="p-3 bg-slate-800/50 border-b border-slate-700 flex justify-between items-center">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Recommended Settings</h4>
+                          <span className="text-[10px] text-slate-500">
+                            {optimizerResult.method === 'grid' ? 'Deterministic grid search' : 'Coordinate search'} • {optimizerResult.evaluations.toLocaleString()} evaluations
+                          </span>
+                        </div>
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-800/30 text-slate-500 uppercase tracking-widest text-[10px]">
+                            <tr>
+                              <th className="p-3">Factor</th>
+                              <th className="p-3 text-center">{optimizerDisplayUnits === 'coded' ? 'Coded Setting' : 'Actual Setting'}</th>
+                              <th className="p-3 text-center">{optimizerDisplayUnits === 'coded' ? 'Actual Setting' : 'Coded Setting'}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {factors.map(factor => {
+                              const coded = optimizerResult.settings[factor.name] ?? 0;
+                              const actual = toActualValue(coded, factor);
+                              return (
+                                <tr key={factor.id} className="border-b border-slate-800">
+                                  <td className="p-3 font-bold text-indigo-300">{factor.name}</td>
+                                  {optimizerDisplayUnits === 'coded' ? (
+                                    <>
+                                      <td className="p-3 text-center font-mono text-white">{fmt(coded, 4)}</td>
+                                      <td className="p-3 text-center font-mono text-emerald-400">{fmt(actual, 4)}</td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="p-3 text-center font-mono text-emerald-400">{fmt(actual, 4)}</td>
+                                      <td className="p-3 text-center font-mono text-white">{fmt(coded, 4)}</td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="xl:col-span-3 bg-slate-900/70 border border-slate-800 rounded-xl p-4 text-sm text-slate-300">
+                        {optimizerGoal === 'maximize' && `The current model predicts the highest response of ${fmt(optimizerResult.predicted, 4)} at the recommended factor settings shown above.`}
+                        {optimizerGoal === 'minimize' && `The current model predicts the lowest response of ${fmt(optimizerResult.predicted, 4)} at the recommended factor settings shown above.`}
+                        {optimizerGoal === 'target' && `The closest setting found predicts ${fmt(optimizerResult.predicted, 4)}, which is ${fmt(optimizerResult.absoluteError || 0, 4)} units from the target${optimizerResult.percentError !== null && optimizerResult.percentError !== undefined ? ` (${fmt(optimizerResult.percentError, 2)}%)` : ''}.`}
+                        {optimizerResult.approximate && (
+                          <span className="block text-amber-300 mt-2">
+                            Approximate search was used to avoid a very large factor grid. Treat this as a planning recommendation and confirm near the suggested settings if the result matters.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
