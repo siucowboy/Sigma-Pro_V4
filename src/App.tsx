@@ -9,6 +9,8 @@ import RegressionModule from './components/RegressionModule';
 import LogisticRegressionModule from './components/LogisticRegressionModule';
 import DOEModule from './components/DOEModule';
 import SPCModule from './components/SPCModule';
+import VerseCard from './components/VerseCard';
+import { VerseCategory } from './data/verses';
 
 export interface Dataset {
   id: string;
@@ -84,6 +86,17 @@ export default function App() {
     { id: 'spc', label: 'Control Charts', icon: GitCommit },
   ];
 
+  const verseCategoryByTab: Record<string, VerseCategory> = {
+    data: 'home-dashboard',
+    capability: 'process-capability',
+    power: 'sample-size-power',
+    hypothesis: 'hypothesis-testing',
+    regression: 'regression-correlation',
+    logistic: 'logistic-regression',
+    doe: 'doe',
+    spc: 'control-charts-spc'
+  };
+
   return (
     <div className={`flex h-screen font-sans transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'light bg-slate-50 text-slate-900'}`}>
       {/* Sidebar Navigation */}
@@ -124,6 +137,9 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto">
+        <div className="px-6 pt-4 bg-slate-900">
+          <VerseCard category={verseCategoryByTab[activeTab] || 'home-dashboard'} />
+        </div>
         <div className={activeTab === 'data' ? 'block h-full' : 'hidden'}><DataManager datasets={datasets} setDatasets={setDatasets} /></div>
         <div className={activeTab === 'capability' ? 'block h-full' : 'hidden'}><CapabilityModule datasets={datasets} /></div>
         <div className={activeTab === 'power' ? 'block h-full' : 'hidden'}><PowerSampleSizeModule /></div>

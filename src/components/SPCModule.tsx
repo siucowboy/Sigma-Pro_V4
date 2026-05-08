@@ -11,14 +11,17 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
   const [subgroupMode, setSubgroupMode] = useState<'fixed' | 'id'>('fixed');
   const [subgroupSize, setSubgroupSize] = useState(5);
   const [subgroupIdColId, setSubgroupIdColId] = useState('');
+  const [phaseColId, setPhaseColId] = useState('');
   const [responseLabel, setResponseLabel] = useState('');
   const [decimalPlaces, setDecimalPlaces] = useState(4);
   const [useScientificNotation, setUseScientificNotation] = useState(false);
 
   const activeDataset = datasets.find(d => d.id === selectedDataId);
   const idDataset = datasets.find(d => d.id === subgroupIdColId);
+  const phaseDataset = datasets.find(d => d.id === phaseColId);
   const rawData = activeDataset?.values as number[] || [];
   const idData = idDataset?.values || [];
+  const phaseData = phaseDataset?.values || [];
   const formatChartValue = (value: any) => {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return value ?? '--';
@@ -36,6 +39,36 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
     8: { a2: 0.373, d3: 0.136, d4: 1.864 },
     9: { a2: 0.337, d3: 0.184, d4: 1.816 },
     10: { a2: 0.308, d3: 0.223, d4: 1.777 }
+  };
+
+  const buildPhaseSegments = (labels: any[] | null, length: number) => {
+    if (!labels || labels.length === 0) return [{ start: 0, end: length - 1, label: 'All Data' }];
+
+    const normalized = Array.from({ length }, (_, i) => {
+      const label = labels[i];
+      return label === null || label === undefined || String(label).trim() === '' ? 'Unspecified' : String(label);
+    });
+
+    const segments: Array<{ start: number; end: number; label: string }> = [];
+    let start = 0;
+    for (let i = 1; i < length; i++) {
+      if (normalized[i] !== normalized[i - 1]) {
+        segments.push({ start, end: i - 1, label: normalized[i - 1] });
+        start = i;
+      }
+    }
+    segments.push({ start, end: length - 1, label: normalized[length - 1] });
+    return segments;
+  };
+
+  const phaseBreaksFromPoints = (points: any[]) => {
+    const breaks: Array<{ id: any; label: string }> = [];
+    for (let i = 1; i < points.length; i++) {
+      if (points[i].phaseKey !== points[i - 1].phaseKey) {
+        breaks.push({ id: points[i].id, label: points[i].phase });
+      }
+    }
+    return breaks;
   };
 
   const applyNelsonRules = (values: number[], labels: any[], center: number, upper: number, lower: number) => {
@@ -110,50 +143,124 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
     return { points, violations: chartViolations };
   };
 
+  const applySegmentLimits = (
+    values: number[],
+    labels: any[],
+    phaseLabels: any[] | null,
+    limitForSegment: (segmentValues: number[], segmentStart: number, segmentEnd: number) => { mean: number; ucl: number; lcl: number },
+    useNelsonRules: boolean
+  ) => {
+    if (values.length === 0) return { points: [], violations: [], phases: [], phaseBreaks: [] };
+    const segments = buildPhaseSegments(phaseLabels, values.length);
+    const points: any[] = [];
+    const violations: any[] = [];
+    const phases: any[] = [];
+
+    segments.forEach((segment, segmentIndex) => {
+      const segmentValues = values.slice(segment.start, segment.end + 1);
+      const segmentLabels = labels.slice(segment.start, segment.end + 1);
+      const limits = limitForSegment(segmentValues, segment.start, segment.end);
+      const checked = useNelsonRules
+        ? applyNelsonRules(segmentValues, segmentLabels, limits.mean, limits.ucl, limits.lcl)
+        : {
+            points: segmentValues.map((val, i) => {
+              const isViolation = val > limits.ucl || val < limits.lcl;
+              return {
+                id: segmentLabels[i],
+                val,
+                isViolation,
+                rule: isViolation ? 'Rule 1 (Beyond control limits)' : ''
+              };
+            }),
+            violations: segmentValues
+              .map((val, i) => ({ index: segmentLabels[i], rule: 'Rule 1 (Beyond control limits)', val, isViolation: val > limits.ucl || val < limits.lcl }))
+              .filter(v => v.isViolation)
+          };
+
+      checked.points.forEach((point: any) => {
+        points.push({
+          ...point,
+          mean: limits.mean,
+          ucl: limits.ucl,
+          lcl: limits.lcl,
+          phase: segment.label,
+          phaseKey: `${segmentIndex}-${segment.label}`
+        });
+      });
+      violations.push(...checked.violations.map((v: any) => ({ ...v, phase: segment.label })));
+      phases.push({ ...segment, ...limits, phaseKey: `${segmentIndex}-${segment.label}` });
+    });
+
+    return { points, violations, phases, phaseBreaks: phaseBreaksFromPoints(points) };
+  };
+
   // SPC calculation engine with Nelson rules for primary variable charts.
   const spcData = useMemo(() => {
     if (!rawData.length) return null;
+    const phaseLabels = phaseColId ? phaseData : null;
     
     let mean = 0;
     let ucl = 0, lcl = 0;
     let points = [];
     let violations = [];
     let secondary: any = null;
+    let phases: any[] = [];
+    let phaseBreaks: any[] = [];
 
     // I-MR Logic (Rule 1, 2, 3)
     if (chartType === 'imr') {
-      mean = rawData.reduce((a, b) => a + b, 0) / rawData.length;
-      let mrs = [];
-      for (let i = 1; i < rawData.length; i++) {
-        mrs.push(Math.abs(rawData[i] - rawData[i - 1]));
-      }
-      const mrBar = mrs.length > 0 ? mrs.reduce((a, b) => a + b, 0) / mrs.length : 0;
-      const sigma = mrBar / 1.128;
-      ucl = mean + 3 * sigma;
-      lcl = mean - 3 * sigma;
-
-      const primaryCheck = applyNelsonRules(rawData, rawData.map((_, i) => i + 1), mean, ucl, lcl);
+      const primaryCheck = applySegmentLimits(
+        rawData,
+        rawData.map((_, i) => i + 1),
+        phaseLabels,
+        segmentValues => {
+          const segmentMean = segmentValues.reduce((a, b) => a + b, 0) / segmentValues.length;
+          const segmentMrs = [];
+          for (let i = 1; i < segmentValues.length; i++) segmentMrs.push(Math.abs(segmentValues[i] - segmentValues[i - 1]));
+          const segmentMrBar = segmentMrs.length > 0 ? segmentMrs.reduce((a, b) => a + b, 0) / segmentMrs.length : 0;
+          const sigma = segmentMrBar / 1.128;
+          return { mean: segmentMean, ucl: segmentMean + 3 * sigma, lcl: segmentMean - 3 * sigma };
+        },
+        true
+      );
       points = primaryCheck.points;
       violations = primaryCheck.violations;
+      phases = primaryCheck.phases;
+      phaseBreaks = primaryCheck.phaseBreaks;
+      mean = phases[phases.length - 1]?.mean || 0;
+      ucl = phases[phases.length - 1]?.ucl || 0;
+      lcl = phases[phases.length - 1]?.lcl || 0;
 
       // MR Chart (Secondary)
       // d4 for n=2 is 3.267, d3 is 0
-      const mrUcl = 3.267 * mrBar;
-      const mrLcl = 0;
+      const mrValues: number[] = [];
+      const mrLabels: any[] = [];
+      const mrPhases: any[] = [];
+      for (let i = 1; i < rawData.length; i++) {
+        if (!phaseLabels || String(phaseLabels[i] ?? 'Unspecified') === String(phaseLabels[i - 1] ?? 'Unspecified')) {
+          mrValues.push(Math.abs(rawData[i] - rawData[i - 1]));
+          mrLabels.push(i + 1);
+          mrPhases.push(phaseLabels ? phaseLabels[i] : 'All Data');
+        }
+      }
+      const mrCheck = applySegmentLimits(
+        mrValues,
+        mrLabels,
+        phaseLabels ? mrPhases : null,
+        segmentValues => {
+          const segmentMrBar = segmentValues.length > 0 ? segmentValues.reduce((a, b) => a + b, 0) / segmentValues.length : 0;
+          return { mean: segmentMrBar, ucl: 3.267 * segmentMrBar, lcl: 0 };
+        },
+        false
+      );
       secondary = {
         title: 'Moving Range (MR) Chart',
-        mean: mrBar,
-        ucl: mrUcl,
-        lcl: mrLcl,
-        points: mrs.map((val, i) => {
-          const isViolation = val > mrUcl || val < mrLcl;
-          return {
-            id: i + 2,
-            val,
-            isViolation,
-            rule: isViolation ? 'Rule 1 (Outlier)' : ''
-          };
-        })
+        mean: mrCheck.phases[mrCheck.phases.length - 1]?.mean || 0,
+        ucl: mrCheck.phases[mrCheck.phases.length - 1]?.ucl || 0,
+        lcl: 0,
+        points: mrCheck.points,
+        phases: mrCheck.phases,
+        phaseBreaks: mrCheck.phaseBreaks
       };
     }
 
@@ -161,31 +268,48 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
     if (chartType === 'xbar') {
       let subgroups: number[][] = [];
       let subgroupLabels: any[] = [];
+      let subgroupPhaseLabels: any[] = [];
 
       if (subgroupMode === 'fixed') {
         const n = Math.max(2, Math.min(10, subgroupSize));
-        for (let i = 0; i < rawData.length; i += n) {
-          const group = rawData.slice(i, i + n);
-          if (group.length === n) {
-            subgroups.push(group);
-            subgroupLabels.push(Math.floor(i / n) + 1);
+        if (phaseLabels) {
+          const segments = buildPhaseSegments(phaseLabels, rawData.length);
+          segments.forEach(segment => {
+            for (let i = segment.start; i <= segment.end; i += n) {
+              const group = rawData.slice(i, Math.min(i + n, segment.end + 1));
+              if (group.length === n) {
+                subgroups.push(group);
+                subgroupLabels.push(subgroups.length);
+                subgroupPhaseLabels.push(segment.label);
+              }
+            }
+          });
+        } else {
+          for (let i = 0; i < rawData.length; i += n) {
+            const group = rawData.slice(i, i + n);
+            if (group.length === n) {
+              subgroups.push(group);
+              subgroupLabels.push(Math.floor(i / n) + 1);
+              subgroupPhaseLabels.push('All Data');
+            }
           }
         }
       } else {
-        const groups: { [key: string]: number[] } = {};
+        const groups: { [key: string]: { values: number[]; phase: string } } = {};
         const labels: string[] = [];
         rawData.forEach((val, i) => {
           const label = idData[i] !== undefined ? String(idData[i]) : `Group ${Math.floor(i/5)+1}`;
           if (!groups[label]) {
-            groups[label] = [];
+            groups[label] = { values: [], phase: phaseLabels ? String(phaseLabels[i] ?? 'Unspecified') : 'All Data' };
             labels.push(label);
           }
-          groups[label].push(val);
+          groups[label].values.push(val);
         });
         labels.forEach(label => {
-          if (groups[label].length >= 2 && groups[label].length <= 10) {
-            subgroups.push(groups[label]);
+          if (groups[label].values.length >= 2 && groups[label].values.length <= 10) {
+            subgroups.push(groups[label].values);
             subgroupLabels.push(label);
+            subgroupPhaseLabels.push(groups[label].phase);
           }
         });
       }
@@ -195,38 +319,51 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
       const xbars = subgroups.map(g => g.reduce((a, b) => a + b, 0) / g.length);
       const ranges = subgroups.map(g => Math.max(...g) - Math.min(...g));
       
-      const xbarBar = xbars.reduce((a, b) => a + b, 0) / xbars.length;
-      const rBar = ranges.reduce((a, b) => a + b, 0) / ranges.length;
-      
-      const avgN = Math.round(subgroups.reduce((a, b) => a + b.length, 0) / subgroups.length);
-      const n = Math.max(2, Math.min(10, avgN));
-      const constants = XBAR_CONSTANTS[n] || XBAR_CONSTANTS[5];
-
-      mean = xbarBar;
-      ucl = mean + constants.a2 * rBar;
-      lcl = mean - constants.a2 * rBar;
-
-      const primaryCheck = applyNelsonRules(xbars, subgroupLabels, mean, ucl, lcl);
+      const primaryCheck = applySegmentLimits(
+        xbars,
+        subgroupLabels,
+        phaseLabels ? subgroupPhaseLabels : null,
+        (segmentValues, segmentStart, segmentEnd) => {
+          const segmentRanges = ranges.slice(segmentStart, segmentEnd + 1).filter(Number.isFinite);
+          const xbarBar = segmentValues.reduce((a, b) => a + b, 0) / segmentValues.length;
+          const rBar = segmentRanges.length > 0 ? segmentRanges.reduce((a, b) => a + b, 0) / segmentRanges.length : 0;
+          const avgN = Math.round(subgroups.reduce((a, b) => a + b.length, 0) / subgroups.length);
+          const n = Math.max(2, Math.min(10, avgN));
+          const constants = XBAR_CONSTANTS[n] || XBAR_CONSTANTS[5];
+          return { mean: xbarBar, ucl: xbarBar + constants.a2 * rBar, lcl: xbarBar - constants.a2 * rBar };
+        },
+        true
+      );
       points = primaryCheck.points;
       violations = primaryCheck.violations;
+      phases = primaryCheck.phases;
+      phaseBreaks = primaryCheck.phaseBreaks;
+      mean = phases[phases.length - 1]?.mean || 0;
+      ucl = phases[phases.length - 1]?.ucl || 0;
+      lcl = phases[phases.length - 1]?.lcl || 0;
 
       // R Chart (Secondary)
-      const rUcl = constants.d4 * rBar;
-      const rLcl = constants.d3 * rBar;
+      const rCheck = applySegmentLimits(
+        ranges,
+        subgroupLabels,
+        phaseLabels ? subgroupPhaseLabels : null,
+        segmentValues => {
+          const rBar = segmentValues.length > 0 ? segmentValues.reduce((a, b) => a + b, 0) / segmentValues.length : 0;
+          const avgN = Math.round(subgroups.reduce((a, b) => a + b.length, 0) / subgroups.length);
+          const n = Math.max(2, Math.min(10, avgN));
+          const constants = XBAR_CONSTANTS[n] || XBAR_CONSTANTS[5];
+          return { mean: rBar, ucl: constants.d4 * rBar, lcl: constants.d3 * rBar };
+        },
+        false
+      );
       secondary = {
         title: 'Range (R) Chart',
-        mean: rBar,
-        ucl: rUcl,
-        lcl: rLcl,
-        points: ranges.map((val, i) => {
-          const isViolation = val > rUcl || val < rLcl;
-          return {
-            id: subgroupLabels[i],
-            val,
-            isViolation,
-            rule: isViolation ? 'Rule 1 (Outlier)' : ''
-          };
-        })
+        mean: rCheck.phases[rCheck.phases.length - 1]?.mean || 0,
+        ucl: rCheck.phases[rCheck.phases.length - 1]?.ucl || 0,
+        lcl: rCheck.phases[rCheck.phases.length - 1]?.lcl || 0,
+        points: rCheck.points,
+        phases: rCheck.phases,
+        phaseBreaks: rCheck.phaseBreaks
       };
     }
 
@@ -248,32 +385,60 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
         lcl = Math.max(0, chartType === 'np' ? mean - 3 * sigmaNP : mean - 3 * sigmaC);
       }
 
-      points = rawData.map((val, i) => {
-        let isViolation = false;
-        let rule = '';
-        if (val > ucl || val < lcl) { isViolation = true; rule = 'Rule 1 (Outlier)'; }
-        if (isViolation) violations.push({ index: i + 1, rule, val });
-        return { id: i + 1, val, isViolation, rule };
-      });
+      const attributeCheck = applySegmentLimits(
+        rawData,
+        rawData.map((_, i) => i + 1),
+        phaseLabels,
+        segmentValues => {
+          const segmentMean = segmentValues.reduce((a, b) => a + b, 0) / segmentValues.length;
+          if (chartType === 'p' || chartType === 'u') {
+            const sigma = Math.sqrt(Math.max(segmentMean * (1 - segmentMean), 0) / subgroupSize);
+            const sigmaU = Math.sqrt(Math.max(segmentMean, 0) / subgroupSize);
+            return {
+              mean: segmentMean,
+              ucl: chartType === 'p' ? segmentMean + 3 * sigma : segmentMean + 3 * sigmaU,
+              lcl: Math.max(0, chartType === 'p' ? segmentMean - 3 * sigma : segmentMean - 3 * sigmaU)
+            };
+          }
+          const sigmaNP = Math.sqrt(Math.max(segmentMean * (1 - (segmentMean / subgroupSize)), 0));
+          const sigmaC = Math.sqrt(Math.max(segmentMean, 0));
+          return {
+            mean: segmentMean,
+            ucl: chartType === 'np' ? segmentMean + 3 * sigmaNP : segmentMean + 3 * sigmaC,
+            lcl: Math.max(0, chartType === 'np' ? segmentMean - 3 * sigmaNP : segmentMean - 3 * sigmaC)
+          };
+        },
+        false
+      );
+      points = attributeCheck.points;
+      violations = attributeCheck.violations;
+      phases = attributeCheck.phases;
+      phaseBreaks = attributeCheck.phaseBreaks;
+      mean = phases[phases.length - 1]?.mean || mean;
+      ucl = phases[phases.length - 1]?.ucl || ucl;
+      lcl = phases[phases.length - 1]?.lcl || lcl;
     }
 
-    return { mean, ucl, lcl, points, violations, secondary };
-  }, [rawData, idData, chartType, subgroupMode, subgroupSize]);
+    return { mean, ucl, lcl, points, violations, secondary, phases, phaseBreaks };
+  }, [rawData, idData, phaseData, phaseColId, chartType, subgroupMode, subgroupSize]);
 
   const ControlChartComponent = ({ data, title, subtitle }: { data: any, title?: string, subtitle?: string }) => {
     if (!data) return null;
     const yValues = data.points.map((point: any) => Number(point.val)).filter(Number.isFinite);
-    const yBaseMin = Math.min(...yValues, data.lcl, data.mean, data.ucl);
-    const yBaseMax = Math.max(...yValues, data.lcl, data.mean, data.ucl);
+    const limitValues = data.points.flatMap((point: any) => [point.lcl, point.mean, point.ucl]).map(Number).filter(Number.isFinite);
+    const yBaseMin = Math.min(...yValues, ...limitValues, data.lcl, data.mean, data.ucl);
+    const yBaseMax = Math.max(...yValues, ...limitValues, data.lcl, data.mean, data.ucl);
     const yRange = yBaseMax - yBaseMin;
     const yPadding = yRange > 0 ? yRange * 0.18 : Math.max(Math.abs(yBaseMax) * 0.02, 1);
     const yDomain = [yBaseMin - yPadding, yBaseMax + yPadding];
+    const hasPhaseLimits = (data.phases?.length || 0) > 1;
 
     return (
       <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 h-[380px] flex flex-col">
         <div className="mb-2">
           {title && <h3 className="text-sm font-bold text-slate-100">{title}</h3>}
           {subtitle && <p className="text-[10px] text-slate-400">{subtitle}</p>}
+          {hasPhaseLimits && <p className="text-[10px] text-indigo-300">Control limits recalculated by phase.</p>}
         </div>
         <div className="flex-1">
           <ResponsiveContainer width="100%" height="100%">
@@ -290,47 +455,70 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
               />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155' }}
-                formatter={(value: any) => [formatChartValue(value), 'Value']}
+                formatter={(value: any, name: any) => [formatChartValue(value), name === 'val' ? 'Value' : String(name).toUpperCase()]}
+                labelFormatter={(label) => {
+                  const point = data.points.find((p: any) => p.id === label);
+                  return point?.phase ? `Point ${label} | Phase: ${point.phase}` : `Point ${label}`;
+                }}
               />
-              <ReferenceLine 
-                y={data.ucl} 
-                stroke="#ef4444" 
-                strokeDasharray="5 5" 
-                label={{ 
-                  position: 'right', 
-                  value: `UCL: ${formatChartValue(data.ucl)}`, 
-                  fill: '#ef4444', 
-                  fontSize: 10, 
-                  fontWeight: 'bold',
-                  offset: 10
-                }} 
-              />
-              <ReferenceLine 
-                y={data.mean} 
-                stroke="#22c55e" 
-                strokeWidth={2}
-                label={{ 
-                  position: 'right', 
-                  value: `CL: ${formatChartValue(data.mean)}`, 
-                  fill: '#22c55e', 
-                  fontSize: 10, 
-                  fontWeight: 'bold',
-                  offset: 10
-                }} 
-              />
-              <ReferenceLine 
-                y={data.lcl} 
-                stroke="#ef4444" 
-                strokeDasharray="5 5" 
-                label={{ 
-                  position: 'right', 
-                  value: `LCL: ${formatChartValue(data.lcl)}`, 
-                  fill: '#ef4444', 
-                  fontSize: 10, 
-                  fontWeight: 'bold',
-                  offset: 10
-                }} 
-              />
+              {hasPhaseLimits ? (
+                <>
+                  {data.phaseBreaks?.map((phaseBreak: any, i: number) => (
+                    <ReferenceLine
+                      key={`${phaseBreak.id}-${i}`}
+                      x={phaseBreak.id}
+                      stroke="#818cf8"
+                      strokeDasharray="3 3"
+                      label={{ value: phaseBreak.label, fill: '#a5b4fc', fontSize: 10, position: 'top' }}
+                    />
+                  ))}
+                  <Line type="stepAfter" dataKey="ucl" name="UCL" stroke="#ef4444" strokeDasharray="5 5" dot={false} isAnimationActive={false} />
+                  <Line type="stepAfter" dataKey="mean" name="CL" stroke="#22c55e" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="stepAfter" dataKey="lcl" name="LCL" stroke="#ef4444" strokeDasharray="5 5" dot={false} isAnimationActive={false} />
+                </>
+              ) : (
+                <>
+                  <ReferenceLine 
+                    y={data.ucl} 
+                    stroke="#ef4444" 
+                    strokeDasharray="5 5" 
+                    label={{ 
+                      position: 'right', 
+                      value: `UCL: ${formatChartValue(data.ucl)}`, 
+                      fill: '#ef4444', 
+                      fontSize: 10, 
+                      fontWeight: 'bold',
+                      offset: 10
+                    }} 
+                  />
+                  <ReferenceLine 
+                    y={data.mean} 
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    label={{ 
+                      position: 'right', 
+                      value: `CL: ${formatChartValue(data.mean)}`, 
+                      fill: '#22c55e', 
+                      fontSize: 10, 
+                      fontWeight: 'bold',
+                      offset: 10
+                    }} 
+                  />
+                  <ReferenceLine 
+                    y={data.lcl} 
+                    stroke="#ef4444" 
+                    strokeDasharray="5 5" 
+                    label={{ 
+                      position: 'right', 
+                      value: `LCL: ${formatChartValue(data.lcl)}`, 
+                      fill: '#ef4444', 
+                      fontSize: 10, 
+                      fontWeight: 'bold',
+                      offset: 10
+                    }} 
+                  />
+                </>
+              )}
               <Line 
                 type="monotone" 
                 dataKey="val" 
@@ -479,6 +667,19 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
               onChange={e => setResponseLabel(e.target.value)}
             />
             <p className="text-[10px] text-slate-500 mt-1">Defaults to column name if empty</p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-700">
+            <label className="block text-xs text-slate-400 mb-1">Phase Column (Optional)</label>
+            <select
+              className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white"
+              value={phaseColId}
+              onChange={e => setPhaseColId(e.target.value)}
+            >
+              <option value="">No phases</option>
+              {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <p className="text-[10px] text-slate-500 mt-1">When selected, limits are recalculated each time the phase value changes down the rows.</p>
           </div>
 
           <div className="pt-2 border-t border-slate-700 space-y-3">

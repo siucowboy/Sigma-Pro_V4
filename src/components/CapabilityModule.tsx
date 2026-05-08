@@ -73,10 +73,13 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
   );
   const hasSpecLimit = usl !== '' || lsl !== '';
 
-  // Default subgroup size to total on data selection
+  // Use the full selected dataset as the starting subgroup size for short-term capability.
   React.useEffect(() => {
     if (rawData.length > 0) {
-      setFixedSubgroupSize(current => current > 0 ? current : rawData.length);
+      setSubgroupType('fixed');
+      setFixedSubgroupSize(rawData.length);
+      setSubgroupIdColumn('');
+      setAnalysisIntent('shortTerm');
     }
   }, [selectedDataId, rawData.length]);
 
@@ -296,7 +299,7 @@ export default function CapabilityModule({ datasets }: { datasets: any[] }) {
                 <input 
                   type="number" 
                   min="1" 
-                  max="25" 
+                  max={Math.max(1, rawData.length)} 
                   value={fixedSubgroupSize} 
                   onChange={e => setFixedSubgroupSize(Number(e.target.value))} 
                   className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm" 
