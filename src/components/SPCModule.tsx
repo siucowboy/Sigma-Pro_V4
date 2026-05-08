@@ -12,11 +12,18 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
   const [subgroupSize, setSubgroupSize] = useState(5);
   const [subgroupIdColId, setSubgroupIdColId] = useState('');
   const [responseLabel, setResponseLabel] = useState('');
+  const [decimalPlaces, setDecimalPlaces] = useState(4);
+  const [useScientificNotation, setUseScientificNotation] = useState(false);
 
   const activeDataset = datasets.find(d => d.id === selectedDataId);
   const idDataset = datasets.find(d => d.id === subgroupIdColId);
   const rawData = activeDataset?.values as number[] || [];
   const idData = idDataset?.values || [];
+  const formatChartValue = (value: any) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return value ?? '--';
+    return useScientificNotation ? numeric.toExponential(decimalPlaces) : numeric.toFixed(decimalPlaces);
+  };
 
   // Control Chart Constants (for Xbar-R)
   const XBAR_CONSTANTS: { [key: number]: { a2: number, d3: number, d4: number } } = {
@@ -255,6 +262,13 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
 
   const ControlChartComponent = ({ data, title, subtitle }: { data: any, title?: string, subtitle?: string }) => {
     if (!data) return null;
+    const yValues = data.points.map((point: any) => Number(point.val)).filter(Number.isFinite);
+    const yBaseMin = Math.min(...yValues, data.lcl, data.mean, data.ucl);
+    const yBaseMax = Math.max(...yValues, data.lcl, data.mean, data.ucl);
+    const yRange = yBaseMax - yBaseMin;
+    const yPadding = yRange > 0 ? yRange * 0.18 : Math.max(Math.abs(yBaseMax) * 0.02, 1);
+    const yDomain = [yBaseMin - yPadding, yBaseMax + yPadding];
+
     return (
       <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 h-[380px] flex flex-col">
         <div className="mb-2">
@@ -271,15 +285,12 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
               <XAxis dataKey="id" stroke="#94a3b8" />
               <YAxis 
                 stroke="#94a3b8" 
-                domain={[
-                  (dataMin: number) => Math.min(dataMin, data.lcl) * 0.95,
-                  (dataMax: number) => Math.max(dataMax, data.ucl) * 1.05
-                ]} 
-                tickFormatter={(val) => typeof val === 'number' ? val.toFixed(4) : val}
+                domain={yDomain} 
+                tickFormatter={formatChartValue}
               />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155' }}
-                formatter={(value: any) => [typeof value === 'number' ? value.toFixed(4) : value, 'Value']}
+                formatter={(value: any) => [formatChartValue(value), 'Value']}
               />
               <ReferenceLine 
                 y={data.ucl} 
@@ -287,7 +298,7 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
                 strokeDasharray="5 5" 
                 label={{ 
                   position: 'right', 
-                  value: `UCL: ${typeof data.ucl === 'number' ? data.ucl.toFixed(4) : '--'}`, 
+                  value: `UCL: ${formatChartValue(data.ucl)}`, 
                   fill: '#ef4444', 
                   fontSize: 10, 
                   fontWeight: 'bold',
@@ -300,7 +311,7 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
                 strokeWidth={2}
                 label={{ 
                   position: 'right', 
-                  value: `CL: ${typeof data.mean === 'number' ? data.mean.toFixed(4) : '--'}`, 
+                  value: `CL: ${formatChartValue(data.mean)}`, 
                   fill: '#22c55e', 
                   fontSize: 10, 
                   fontWeight: 'bold',
@@ -313,7 +324,7 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
                 strokeDasharray="5 5" 
                 label={{ 
                   position: 'right', 
-                  value: `LCL: ${typeof data.lcl === 'number' ? data.lcl.toFixed(4) : '--'}`, 
+                  value: `LCL: ${formatChartValue(data.lcl)}`, 
                   fill: '#ef4444', 
                   fontSize: 10, 
                   fontWeight: 'bold',
@@ -355,7 +366,7 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
         <h3 className="text-red-400 font-bold text-sm mb-2">Process Out of Control on {chartName}</h3>
         <ul className="text-xs text-slate-300 space-y-1">
           {chartViolations.slice(0, 5).map((v: any, i: number) => (
-            <li key={i}>Point {v.id}: {v.rule} (Value: {typeof v.val === 'number' ? v.val.toFixed(4) : v.val})</li>
+            <li key={i}>Point {v.id}: {v.rule} (Value: {formatChartValue(v.val)})</li>
           ))}
           {chartViolations.length > 5 && <li>...and {chartViolations.length - 5} more signals on this chart.</li>}
         </ul>
@@ -468,6 +479,45 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
               onChange={e => setResponseLabel(e.target.value)}
             />
             <p className="text-[10px] text-slate-500 mt-1">Defaults to column name if empty</p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-700 space-y-3">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chart Number Format</h3>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Decimal Places</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="w-8 h-8 rounded bg-slate-900 border border-slate-600 text-slate-300 hover:text-white hover:border-slate-400"
+                  onClick={() => setDecimalPlaces(prev => Math.max(0, prev - 1))}
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="0"
+                  max="8"
+                  className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white text-center"
+                  value={decimalPlaces}
+                  onChange={e => setDecimalPlaces(Math.max(0, Math.min(8, parseInt(e.target.value) || 0)))}
+                />
+                <button
+                  type="button"
+                  className="w-8 h-8 rounded bg-slate-900 border border-slate-600 text-slate-300 hover:text-white hover:border-slate-400"
+                  onClick={() => setDecimalPlaces(prev => Math.min(8, prev + 1))}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUseScientificNotation(prev => !prev)}
+              className={`w-full p-2 rounded border text-xs font-bold transition-colors ${useScientificNotation ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-600 text-slate-400 hover:text-white'}`}
+            >
+              {useScientificNotation ? 'Scientific Notation On' : 'Scientific Notation Off'}
+            </button>
+            <p className="text-[10px] text-slate-500">Applies to axis labels, tooltips, and control-limit labels.</p>
           </div>
 
           <div className="pt-2 border-t border-slate-700">
