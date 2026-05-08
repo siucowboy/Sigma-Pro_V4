@@ -458,16 +458,16 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
             <BarChart2 className="w-4 h-4" /> Analysis
           </button>
           <button 
-            onClick={() => setActiveTab('optimizer')}
-            className={`px-4 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
-          >
-            <Target className="w-4 h-4" /> Optimizer
-          </button>
-          <button 
             onClick={() => setActiveTab('plots')}
             className={`px-4 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'plots' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
           >
             <Layout className="w-4 h-4" /> Plots
+          </button>
+          <button 
+            onClick={() => setActiveTab('optimizer')}
+            className={`px-4 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            <Target className="w-4 h-4" /> Optimizer
           </button>
           <button 
             onClick={() => setActiveTab('residuals')}

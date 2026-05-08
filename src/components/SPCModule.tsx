@@ -31,7 +31,79 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
     10: { a2: 0.308, d3: 0.223, d4: 1.777 }
   };
 
-  // Simplified math engine for SPC calculation & Nelson Rules
+  const applyNelsonRules = (values: number[], labels: any[], center: number, upper: number, lower: number) => {
+    const sigma = Math.max(Math.abs(upper - center), Math.abs(center - lower)) / 3;
+    const points: any[] = [];
+    const chartViolations: any[] = [];
+
+    values.forEach((val, i) => {
+      const rules: string[] = [];
+
+      if (val > upper || val < lower) rules.push('Rule 1 (Beyond control limits)');
+
+      if (i >= 8) {
+        const window = values.slice(i - 8, i + 1);
+        if (window.every(v => v > center) || window.every(v => v < center)) {
+          rules.push('Rule 2 (9 points on one side)');
+        }
+      }
+
+      if (i >= 5) {
+        const window = values.slice(i - 5, i + 1);
+        const increasing = window.every((v, idx) => idx === 0 || v > window[idx - 1]);
+        const decreasing = window.every((v, idx) => idx === 0 || v < window[idx - 1]);
+        if (increasing || decreasing) rules.push('Rule 3 (6 increasing or decreasing)');
+      }
+
+      if (i >= 13) {
+        const window = values.slice(i - 13, i + 1);
+        const alternating = window.every((v, idx) => {
+          if (idx < 2) return true;
+          const lastMove = Math.sign(window[idx - 1] - window[idx - 2]);
+          const thisMove = Math.sign(v - window[idx - 1]);
+          return lastMove !== 0 && thisMove !== 0 && thisMove === -lastMove;
+        });
+        if (alternating) rules.push('Rule 4 (14 alternating up and down)');
+      }
+
+      if (sigma > 0 && i >= 2) {
+        const window = values.slice(i - 2, i + 1);
+        const highCount = window.filter(v => v > center + 2 * sigma).length;
+        const lowCount = window.filter(v => v < center - 2 * sigma).length;
+        if (highCount >= 2 || lowCount >= 2) rules.push('Rule 5 (2 of 3 beyond 2 sigma)');
+      }
+
+      if (sigma > 0 && i >= 4) {
+        const window = values.slice(i - 4, i + 1);
+        const highCount = window.filter(v => v > center + sigma).length;
+        const lowCount = window.filter(v => v < center - sigma).length;
+        if (highCount >= 4 || lowCount >= 4) rules.push('Rule 6 (4 of 5 beyond 1 sigma)');
+      }
+
+      if (sigma > 0 && i >= 14) {
+        const window = values.slice(i - 14, i + 1);
+        if (window.every(v => Math.abs(v - center) < sigma)) {
+          rules.push('Rule 7 (15 within 1 sigma)');
+        }
+      }
+
+      if (sigma > 0 && i >= 7) {
+        const window = values.slice(i - 7, i + 1);
+        if (window.every(v => Math.abs(v - center) > sigma) && window.some(v => v > center) && window.some(v => v < center)) {
+          rules.push('Rule 8 (8 outside 1 sigma)');
+        }
+      }
+
+      const rule = rules.join('; ');
+      const point = { id: labels[i], val, isViolation: rules.length > 0, rule };
+      if (point.isViolation) chartViolations.push({ index: labels[i], rule, val });
+      points.push(point);
+    });
+
+    return { points, violations: chartViolations };
+  };
+
+  // SPC calculation engine with Nelson rules for primary variable charts.
   const spcData = useMemo(() => {
     if (!rawData.length) return null;
     
@@ -53,25 +125,9 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
       ucl = mean + 3 * sigma;
       lcl = mean - 3 * sigma;
 
-      let consecutiveAbove = 0, consecutiveBelow = 0;
-      let consecutiveUp = 0, consecutiveDown = 0;
-
-      points = rawData.map((val, i) => {
-        let isViolation = false;
-        let rule = '';
-
-        if (val > ucl || val < lcl) { isViolation = true; rule = 'Rule 1 (Outlier)'; }
-        if (val > mean) { consecutiveAbove++; consecutiveBelow = 0; }
-        else if (val < mean) { consecutiveBelow++; consecutiveAbove = 0; }
-        if (consecutiveAbove >= 9 || consecutiveBelow >= 9) { isViolation = true; rule = 'Rule 2 (Shift)'; }
-        if (i > 0) {
-          if (val > rawData[i-1]) { consecutiveUp++; consecutiveDown = 0; }
-          else if (val < rawData[i-1]) { consecutiveDown++; consecutiveUp = 0; }
-          if (consecutiveUp >= 6 || consecutiveDown >= 6) { isViolation = true; rule = 'Rule 3 (Trend)'; }
-        }
-        if (isViolation) violations.push({ index: i + 1, rule, val });
-        return { id: i + 1, val, isViolation, rule };
-      });
+      const primaryCheck = applyNelsonRules(rawData, rawData.map((_, i) => i + 1), mean, ucl, lcl);
+      points = primaryCheck.points;
+      violations = primaryCheck.violations;
 
       // MR Chart (Secondary)
       // d4 for n=2 is 3.267, d3 is 0
@@ -82,12 +138,15 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
         mean: mrBar,
         ucl: mrUcl,
         lcl: mrLcl,
-        points: mrs.map((val, i) => ({
-          id: i + 2,
-          val,
-          isViolation: val > mrUcl || val < mrLcl,
-          rule: val > mrUcl || val < mrLcl ? 'Rule 1 (Outlier)' : ''
-        }))
+        points: mrs.map((val, i) => {
+          const isViolation = val > mrUcl || val < mrLcl;
+          return {
+            id: i + 2,
+            val,
+            isViolation,
+            rule: isViolation ? 'Rule 1 (Outlier)' : ''
+          };
+        })
       };
     }
 
@@ -140,34 +199,9 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
       ucl = mean + constants.a2 * rBar;
       lcl = mean - constants.a2 * rBar;
 
-      let consecutiveAbove = 0, consecutiveBelow = 0;
-      let consecutiveUp = 0, consecutiveDown = 0;
-
-      points = xbars.map((val, i) => {
-        let isViolation = false;
-        let rule = '';
-        
-        if (val > ucl || val < lcl) { isViolation = true; rule = 'Rule 1 (Outlier)'; }
-        
-        if (val > mean) { consecutiveAbove++; consecutiveBelow = 0; }
-        else if (val < mean) { consecutiveBelow++; consecutiveAbove = 0; }
-        if (consecutiveAbove >= 9 || consecutiveBelow >= 9) { 
-          isViolation = true; 
-          rule = 'Rule 2 (Shift)'; 
-        }
-
-        if (i > 0) {
-          if (val > xbars[i-1]) { consecutiveUp++; consecutiveDown = 0; }
-          else if (val < xbars[i-1]) { consecutiveDown++; consecutiveUp = 0; }
-          if (consecutiveUp >= 6 || consecutiveDown >= 6) { 
-            isViolation = true; 
-            rule = 'Rule 3 (Trend)'; 
-          }
-        }
-
-        if (isViolation) violations.push({ index: subgroupLabels[i], rule, val });
-        return { id: subgroupLabels[i], val, isViolation, rule };
-      });
+      const primaryCheck = applyNelsonRules(xbars, subgroupLabels, mean, ucl, lcl);
+      points = primaryCheck.points;
+      violations = primaryCheck.violations;
 
       // R Chart (Secondary)
       const rUcl = constants.d4 * rBar;
@@ -177,12 +211,15 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
         mean: rBar,
         ucl: rUcl,
         lcl: rLcl,
-        points: ranges.map((val, i) => ({
-          id: subgroupLabels[i],
-          val,
-          isViolation: val > rUcl || val < rLcl,
-          rule: val > rUcl || val < rLcl ? 'Rule 1 (Outlier)' : ''
-        }))
+        points: ranges.map((val, i) => {
+          const isViolation = val > rUcl || val < rLcl;
+          return {
+            id: subgroupLabels[i],
+            val,
+            isViolation,
+            rule: isViolation ? 'Rule 1 (Outlier)' : ''
+          };
+        })
       };
     }
 
@@ -300,6 +337,32 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
     );
   };
 
+  const ChartStatusMessage = ({ data, chartName }: { data: any, chartName: string }) => {
+    if (!data?.points?.length) return null;
+    const chartViolations = data.points.filter((point: any) => point.isViolation);
+
+    if (chartViolations.length === 0) {
+      return (
+        <div className="bg-emerald-900/20 border border-emerald-500/40 p-3 rounded-lg">
+          <h3 className="text-emerald-400 font-bold text-sm mb-1">Process Stable on {chartName}</h3>
+          <p className="text-xs text-slate-300">No control-limit or run-rule signals were detected on this chart.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-red-900/20 border border-red-500/50 p-3 rounded-lg">
+        <h3 className="text-red-400 font-bold text-sm mb-2">Process Out of Control on {chartName}</h3>
+        <ul className="text-xs text-slate-300 space-y-1">
+          {chartViolations.slice(0, 5).map((v: any, i: number) => (
+            <li key={i}>Point {v.id}: {v.rule} (Value: {typeof v.val === 'number' ? v.val.toFixed(4) : v.val})</li>
+          ))}
+          {chartViolations.length > 5 && <li>...and {chartViolations.length - 5} more signals on this chart.</li>}
+        </ul>
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 bg-slate-900 text-slate-100 min-h-screen">
       <h2 className="text-2xl font-bold mb-6">Control Charts (SPC)</h2>
@@ -406,6 +469,41 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
             />
             <p className="text-[10px] text-slate-500 mt-1">Defaults to column name if empty</p>
           </div>
+
+          <div className="pt-2 border-t border-slate-700">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Rules Checked</h3>
+            {['imr', 'xbar'].includes(chartType) ? (
+              <div className="space-y-3">
+                <div>
+                  <div className="text-[10px] font-bold text-indigo-300 uppercase mb-1">
+                    {chartType === 'imr' ? 'Individuals Chart' : 'Xbar Chart'}
+                  </div>
+                  <ul className="text-[10px] text-slate-400 space-y-1 list-disc pl-4">
+                    <li>1 point beyond a control limit</li>
+                    <li>9 points in a row on the same side of center</li>
+                    <li>6 points in a row increasing or decreasing</li>
+                    <li>14 points alternating up and down</li>
+                    <li>2 of 3 points beyond 2 sigma on the same side</li>
+                    <li>4 of 5 points beyond 1 sigma on the same side</li>
+                    <li>15 points in a row within 1 sigma of center</li>
+                    <li>8 points in a row outside 1 sigma, both sides represented</li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-cyan-300 uppercase mb-1">
+                    {chartType === 'imr' ? 'Moving Range Chart' : 'Range Chart'}
+                  </div>
+                  <ul className="text-[10px] text-slate-400 space-y-1 list-disc pl-4">
+                    <li>1 point beyond a control limit</li>
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <ul className="text-[10px] text-slate-400 space-y-1 list-disc pl-4">
+                <li>1 point beyond a control limit</li>
+              </ul>
+            )}
+          </div>
         </div>
 
         <div className="lg:col-span-3 space-y-4">
@@ -422,18 +520,32 @@ export default function SPCModule({ datasets }: { datasets: any[] }) {
                     } 
                     subtitle={['xbar', 'p', 'np', 'u'].includes(chartType) ? `Subgroup size = ${subgroupSize}` : undefined}
                   />
+                  <ChartStatusMessage
+                    data={spcData}
+                    chartName={
+                      chartType === 'imr' ? 'Individuals Chart' :
+                      chartType === 'xbar' ? 'Xbar Chart' :
+                      `${chartType.toUpperCase()} Chart`
+                    }
+                  />
                   {spcData.secondary && (
-                    <ControlChartComponent 
-                      data={spcData.secondary} 
-                      title={`${spcData.secondary.title} of ${responseLabel || activeDataset?.name || 'Data'}`} 
-                      subtitle={chartType === 'xbar' ? `Subgroup size = ${subgroupSize}` : undefined}
-                    />
+                    <>
+                      <ControlChartComponent 
+                        data={spcData.secondary} 
+                        title={`${spcData.secondary.title} of ${responseLabel || activeDataset?.name || 'Data'}`} 
+                        subtitle={chartType === 'xbar' ? `Subgroup size = ${subgroupSize}` : undefined}
+                      />
+                      <ChartStatusMessage
+                        data={spcData.secondary}
+                        chartName={chartType === 'imr' ? 'Moving Range Chart' : 'Range Chart'}
+                      />
+                    </>
                   )}
                 </div>
               </ExportWrapper>
 
-              {spcData.violations.length > 0 && (
-                <ExportWrapper fileName="control-chart-violations">
+              {false && (
+                <ExportWrapper fileName="control-chart-violations-unused">
                   <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-lg">
                     <h3 className="text-red-400 font-bold mb-2">⚠ Process Out of Control</h3>
                     <ul className="text-sm text-slate-300 space-y-1">
