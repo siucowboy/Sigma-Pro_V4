@@ -680,7 +680,6 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                             'Run Ord',
                             'Block',
                             ...factors.map(f => f.name),
-                            ...selectedInteractionTerms,
                             'Response'
                         ];
                         const rows = designMatrix.map((run, i) => [
@@ -688,7 +687,6 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                             i + 1,
                             run.block,
                             ...factors.map(f => displayCoded ? run[`${f.name}_coded`] : run[f.name]),
-                            ...selectedInteractionTerms.map(term => getInteractionValue(run, term)),
                             responseDataset && responseDataset.values[i] !== undefined ? responseDataset.values[i] : ''
                         ]);
                         const tsv = [headers, ...rows].map(row => row.join('\t')).join('\n');
@@ -724,9 +722,6 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                       {factors.map(f => (
                         <th key={f.name} className="p-3 font-bold text-indigo-400">{f.name}</th>
                       ))}
-                      {selectedInteractionTerms.map(term => (
-                        <th key={term} className="p-3 font-bold text-amber-400">{term}</th>
-                      ))}
                       <th className="p-3 font-bold text-emerald-400">Response (Y)</th>
                     </tr>
                   </thead>
@@ -739,11 +734,6 @@ export default function DOEModule({ datasets }: { datasets: any[] }) {
                         {factors.map(f => (
                           <td key={f.name} className={`p-3 text-xs font-mono font-medium ${displayCoded ? (run[`${f.name}_coded`] === 1 ? 'text-indigo-400' : 'text-slate-500') : 'text-white'}`}>
                             {displayCoded ? run[`${f.name}_coded`] : run[f.name]}
-                          </td>
-                        ))}
-                        {selectedInteractionTerms.map(term => (
-                          <td key={term} className="p-3 text-xs font-mono text-amber-400">
-                            {getInteractionValue(run, term)}
                           </td>
                         ))}
                         <td className="p-3 text-xs font-mono text-emerald-400">
